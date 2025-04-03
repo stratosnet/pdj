@@ -1,0 +1,54 @@
+services:
+  web:
+    container_name: web
+    build:
+      context: .
+      args:
+        - BUILD_LOCAL=true
+    env_file:
+      - .env
+    restart: always
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./app:/app
+      - static_volume:/var/www/web/static
+      - media_volume:/var/www/web/media
+    command: python manage.py runserver 0.0.0.0:8000
+    # command: /bin/sh
+    ports:
+      - 9060:8000
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - pg_network
+    depends_on:
+      - postgres
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "128m"
+  postgres:
+    restart: always
+    image: postgres:17.4
+    environment:
+      - POSTGRES_DB=payment-service
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - pg_network
+    volumes:
+      - pg_volume:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "128m"
+
+networks:
+  pg_network:
+    driver: bridge
+
+volumes:
+  pg_volume:
+  static_volume:
+  media_volume:

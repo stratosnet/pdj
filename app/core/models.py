@@ -1,0 +1,95 @@
+import os
+import binascii
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class Token(models.Model):
+    key = models.CharField(
+        _("Key"),
+        max_length=40,
+        primary_key=True,
+        blank=True,
+        help_text=_("Token key (leave empty to autogenerate)"),
+    )
+    client = models.ForeignKey(
+        "Client",
+        related_name="auth_tokens",
+        on_delete=models.CASCADE,
+        verbose_name=_("Client"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name=_("Is Active"),
+        help_text=_("Designates whether this token is active"),
+    )
+
+    class Meta:
+        verbose_name = _("Token")
+        verbose_name_plural = _("Tokens")
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = self.generate_key()
+        return super().save(*args, **kwargs)
+
+    @classmethod
+    def generate_key(cls):
+        return binascii.hexlify(os.urandom(20)).decode()
+
+    def __str__(self):
+        return self.key
+
+
+class Client(models.Model):
+
+    name = models.CharField(
+        max_length=255,
+        verbose_name=_("Name"),
+        help_text=_("Client's full name or company name"),
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("Description"),
+        help_text=_("Additional information about the client"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name=_("Is Active"),
+        help_text=_("Designates whether this client is active"),
+    )
+
+    class Meta:
+        verbose_name = _("Client")
+        verbose_name_plural = _("Clients")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class SSOUser(models.Model):
+
+    sub = models.UUIDField(
+        primary_key=True,
+        unique=True,
+        editable=False,
+        verbose_name=_("Subject Identifier"),
+        help_text=_("Unique identifier from SSO provider"),
+    )
+    email = models.EmailField(blank=True, null=True, verbose_name=_("Email"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
+
+    class Meta:
+        verbose_name = _("SSO User")
+        verbose_name_plural = _("SSO Users")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.sub.hex
