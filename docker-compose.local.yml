@@ -28,9 +28,47 @@ services:
       driver: "json-file"
       options:
         max-size: "128m"
-  postgres:
+  celery_worker:
     restart: always
+    stdin_open: true
+    tty: true
+    build:
+      context: .
+      args:
+        - BUILD_LOCAL=true
+    env_file:
+      - .env
+    networks:
+      - pg_network
+      - redis_network
+    command: >
+      sh -c "./manage.py debug_celery"
+    volumes:
+      - ./app:/app
+    depends_on:
+      - postgres
+      - redis
+  celery_beat:
+    restart: always
+    build:
+      context: .
+      args:
+        - BUILD_LOCAL=true
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app
+    networks:
+      - pg_network
+      - redis_network
+    command: >
+      sh -c "celery -A core beat -l info --pidfile=/tmp/celeryd.pid"
+    depends_on:
+      - postgres
+      - redis
+  postgres:
     image: postgres:17.4
+    restart: always
     environment:
       - POSTGRES_DB=payment-service
       - POSTGRES_USER=postgres
@@ -43,12 +81,26 @@ services:
       driver: "json-file"
       options:
         max-size: "128m"
+  redis:
+    restart: always
+    image: redis:7.4.2-bookworm
+    networks:
+      - redis_network
+    volumes:
+      - redis_volume:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "128m"
 
 networks:
   pg_network:
     driver: bridge
+  redis_network:
+    driver: bridge
 
 volumes:
   pg_volume:
+  redis_volume:
   static_volume:
   media_volume:

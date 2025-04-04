@@ -1,5 +1,7 @@
 FROM python:3.11-slim-bookworm
 
+RUN apt-get update && apt-get install -y procps curl
+
 COPY --from=ghcr.io/astral-sh/uv:0.6.4 /uv /uvx /bin/
 
 RUN mkdir -p /app
