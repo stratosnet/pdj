@@ -108,6 +108,16 @@ class Plan(models.Model):
 
 
 class SubscriptionManager(models.Manager):
+    def get_user_subscriptions(self, user_id: int):
+        now = timezone.now()
+        return self.filter(
+            Q(
+                user_id=user_id,
+                start_at__lte=now,
+            ),
+            Q(end_at__gte=now) | Q(end_at__isnull=True),
+        ).order_by("-created_at")
+
     def get_active_last(self, id: int, is_recurring: bool = True):
         now = timezone.now()
         return (
@@ -132,7 +142,7 @@ class Subscription(models.Model):
         related_name="subscriptions",
         on_delete=models.CASCADE,
     )
-    tier = models.ForeignKey(
+    plan = models.ForeignKey(
         "Plan",
         verbose_name=_("plan"),
         related_name="subscriptions",
@@ -164,7 +174,12 @@ class Subscription(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"user: {self.user.user_id} - tier: {self.tier.tier_id}"
+        return f"user: {self.user.pk} - tier: {self.plan.pk}"
+
+    @property
+    def is_active(self):
+        now = timezone.now()
+        return self.start_at < now and (now < self.end_at or not self.end_at)
 
     def update_end_date(self):
         if self.plan.period == self.plan.DAY:

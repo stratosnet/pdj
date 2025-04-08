@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from faker import Faker
 
-from accounts.models import Client, Token
+from accounts.models import Client
 from payments.models import Plan, Processor
 from core.utils import generate_sku_prefix
 
@@ -23,7 +23,6 @@ class Command(BaseCommand):
             sku_prefix=generate_sku_prefix(),
             is_enabled=True,
         )
-        Token.objects.create(client=client, is_enabled=True)
 
         Processor.objects.create(
             processor_type=Processor.PAYPAL,

@@ -1,6 +1,8 @@
+import os
 import random
 import string
 import secrets
+import binascii
 
 
 def mask_secret(text: str, keep_first=4):
@@ -16,3 +18,7 @@ def generate_sku_prefix(length=4):
 
 def generate_enpoint_secret(length=30):
     return secrets.token_urlsafe(length)
+
+
+def generate_client_key():
+    return binascii.hexlify(os.urandom(20)).decode()

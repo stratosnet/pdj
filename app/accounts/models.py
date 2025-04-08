@@ -1,49 +1,7 @@
-import os
-import binascii
-
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.utils import generate_sku_prefix
-
-
-class Token(models.Model):
-    key = models.CharField(
-        _("Key"),
-        max_length=40,
-        primary_key=True,
-        blank=True,
-        help_text=_("Token key (leave empty to autogenerate)"),
-    )
-    client = models.ForeignKey(
-        "Client",
-        related_name="auth_tokens",
-        on_delete=models.CASCADE,
-        verbose_name=_("Client"),
-    )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
-    is_enabled = models.BooleanField(
-        default=False,
-        verbose_name=_("Is Active"),
-        help_text=_("Designates whether this token is active"),
-    )
-
-    class Meta:
-        verbose_name = _("Token")
-        verbose_name_plural = _("Tokens")
-        ordering = ["-created_at"]
-
-    def save(self, *args, **kwargs):
-        if not self.key:
-            self.key = self.generate_key()
-        return super().save(*args, **kwargs)
-
-    @classmethod
-    def generate_key(cls):
-        return binascii.hexlify(os.urandom(20)).decode()
-
-    def __str__(self):
-        return self.key
+from core.utils import generate_sku_prefix, generate_client_key
 
 
 class Client(models.Model):
@@ -58,6 +16,23 @@ class Client(models.Model):
         null=True,
         verbose_name=_("Description"),
         help_text=_("Additional information about the client"),
+    )
+
+    client_id = models.CharField(
+        _("Client ID"),
+        max_length=40,
+        unique=True,
+        editable=False,
+        help_text=_("Client ID"),
+        default=generate_client_key,
+    )
+    client_secret = models.CharField(
+        _("Client secret"),
+        max_length=40,
+        unique=True,
+        editable=False,
+        help_text=_("Client secret"),
+        default=generate_client_key,
     )
 
     product_name = models.CharField(
@@ -77,11 +52,13 @@ class Client(models.Model):
         _("image url"),
         help_text=_("The image URL for the product"),
         null=True,
+        blank=True,
     )
     home_url = models.URLField(
         _("home url"),
         help_text=_("The home page URL for the product"),
         null=True,
+        blank=True,
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))

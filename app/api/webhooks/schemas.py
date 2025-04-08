@@ -1,24 +1,6 @@
 from typing import Any
+
 from ninja import Schema
-
-
-class CheckoutSchema(Schema):
-    plan_id: int
-    payment_method_id: int
-
-
-class UnsubscribeSchema(Schema):
-    id: int
-    reason: str
-
-
-class SwsubscribeSchema(Schema):
-    from_subscription_id: int
-    to_subscription_id: str
-
-
-class LinkSchema(Schema):
-    url: str
 
 
 class PayPalWebhookSchema(Schema):

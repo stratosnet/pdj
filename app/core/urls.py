@@ -23,7 +23,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.utils.translation import gettext_lazy as _
 
-from .api import api as ninja_api
+from api import api as ninja_api
 
 logger = logging.getLogger(__name__)
 
