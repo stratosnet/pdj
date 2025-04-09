@@ -201,9 +201,9 @@ class OriginalPayPalClient:
 
 class PayPalClient(PaymentClient, OriginalPayPalClient):
 
-    def generate_subscription_link(
+    def generate_subscription_data(
         self, plan_id: str, order_id: str, return_url: str, cancel_url: str
-    ):
+    ) -> dict[str, str] | None:
         try:
             sub = self.create_billing_subscription(
                 plan_id, order_id, return_url, cancel_url
@@ -213,7 +213,10 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
             return None
 
         try:
-            return sub.get("links", [])[0].get("href")
+            data = {}
+            data["id"] = sub["id"]
+            data["url"] = sub.get("links", [])[0].get("href")
+            return data
         except IndexError:
             return None
 

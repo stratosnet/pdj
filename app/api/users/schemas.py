@@ -1,7 +1,21 @@
 from ninja import Schema, ModelSchema
 
 from accounts.models import SSOUser
-from ..subscriptions.schemas import SubscriptionSchema
+from payments.models import Subscription
+
+
+class SubscriptionSchema(ModelSchema):
+    plan_id: int
+    is_active: bool
+
+    class Meta:
+        model = Subscription
+        fields = [
+            "id",
+            "start_at",
+            "end_at",
+            "created_at",
+        ]
 
 
 class MeSchema(ModelSchema):

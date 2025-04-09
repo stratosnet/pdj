@@ -8,7 +8,7 @@ from requests.exceptions import RequestException
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
-from .models import Plan, Processor, PaymentReference
+from .models import Plan, Processor, PlanProcessorLink
 from .clients.paypal import PayPalClient
 
 
@@ -75,7 +75,7 @@ def paypal_sync_plans():
                     pr = plan.links.get(
                         processor=processor,
                     )
-                except PaymentReference.DoesNotExist:
+                except PlanProcessorLink.DoesNotExist:
                     pr = None
 
                 if pr is None and plan.is_enabled:

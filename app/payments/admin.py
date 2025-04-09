@@ -3,14 +3,44 @@ from django.urls import reverse
 
 from .models import (
     Plan,
-    Order,
+    Payment,
     Subscription,
-    PaymentReference,
+    PlanProcessorLink,
     Processor,
 )
 
-admin.site.register(Order)
-admin.site.register(Subscription)
+
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "user",
+        "plan",
+        "payment",
+        "start_at",
+        "end_at",
+        "created_at",
+    ]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("user", "plan", "payment")
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "external_id",
+        "user",
+        "processor",
+        "amount",
+        "currency",
+        "status",
+        "created_at",
+    ]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("user", "processor")
 
 
 @admin.register(Processor)
@@ -52,12 +82,13 @@ class PlanAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related("client")
 
 
-@admin.register(PaymentReference)
-class PaymentReferenceAdmin(admin.ModelAdmin):
+@admin.register(PlanProcessorLink)
+class PlanProcessorLinkAdmin(admin.ModelAdmin):
     list_display = [
         "id",
-        "external_id",
+        "plan",
         "processor",
+        "external_id",
         "created_at",
     ]
 
@@ -65,4 +96,4 @@ class PaymentReferenceAdmin(admin.ModelAdmin):
         return False
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("processor")
+        return super().get_queryset(request).select_related("plan", "processor")

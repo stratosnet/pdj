@@ -149,12 +149,17 @@ LOGGING = {
         },
         "celery": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "celery.task": {"handlers": ["console"], "level": "INFO", "propagate": False},
-        "core": {
+        "accounts": {
             "handlers": ["colorized_console"],
             "level": "INFO",
             "propagate": False,
         },
         "payments": {
+            "handlers": ["colorized_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "api": {
             "handlers": ["colorized_console"],
             "level": "INFO",
             "propagate": False,

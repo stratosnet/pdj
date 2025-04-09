@@ -9,9 +9,6 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.contrib.contenttypes.fields import GenericRelation
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 
 from core.utils import mask_secret, generate_enpoint_secret
@@ -19,6 +16,30 @@ from core.middleware import get_current_request
 
 from .clients.base import PaymentClient
 from .clients.paypal import PayPalClient
+
+
+class PlanProcessorLink(models.Model):
+
+    plan = models.ForeignKey(
+        "Plan",
+        verbose_name=_("plan"),
+        related_name="links",
+        on_delete=models.CASCADE,
+    )
+    processor = models.ForeignKey(
+        "Processor",
+        on_delete=models.CASCADE,
+        verbose_name=_("Processor"),
+        related_name="links",
+        help_text=_("The payment processor service"),
+    )
+    external_id = models.CharField(_("external_id"), max_length=128, unique=True)
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Plan processor link")
+        verbose_name_plural = _("Plan processor links")
+        ordering = ["-created_at"]
 
 
 class Plan(models.Model):
@@ -83,8 +104,6 @@ class Plan(models.Model):
     )
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
-    links = GenericRelation("PaymentReference")
-
     class Meta:
         verbose_name = _("Plan")
         verbose_name_plural = _("Plans")
@@ -107,7 +126,7 @@ class Plan(models.Model):
         }
 
 
-class SubscriptionManager(models.Manager):
+class SubscriptionQuerySet(models.QuerySet):
     def get_user_subscriptions(self, user_id: int):
         now = timezone.now()
         return self.filter(
@@ -118,14 +137,13 @@ class SubscriptionManager(models.Manager):
             Q(end_at__gte=now) | Q(end_at__isnull=True),
         ).order_by("-created_at")
 
-    def get_active_last(self, id: int, is_recurring: bool = True):
+    def get_active_last(self, user_id: int, is_recurring: bool = True):
         now = timezone.now()
         return (
-            self.select_related("plan")
-            .filter(
+            self.filter(
                 Q(
-                    pk=id,
-                    plan__is_reccuring=is_recurring,
+                    user_id=user_id,
+                    plan__is_recurring=is_recurring,
                     start_at__lte=now,
                 ),
                 Q(end_at__gte=now) | Q(end_at__isnull=True),
@@ -145,28 +163,23 @@ class Subscription(models.Model):
     plan = models.ForeignKey(
         "Plan",
         verbose_name=_("plan"),
-        related_name="subscriptions",
+        related_name="payments",
         on_delete=models.CASCADE,
     )
-    order = models.ForeignKey(
-        "Order",
-        verbose_name=_("order"),
-        related_name="subscriptions",
-        on_delete=models.CASCADE,
+    payment = models.OneToOneField(
+        "Payment",
+        verbose_name=_("payment"),
+        related_name="subscription",
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
     )
     start_at = models.DateTimeField(_("start at"), editable=False)
     end_at = models.DateTimeField(_("end at"), null=True, blank=True, editable=False)
-    next_billing_at = models.DateTimeField(
-        _("next billing at"), null=True, blank=True, editable=False
-    )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
-    links = GenericRelation("PaymentReference")
-
-    objects = SubscriptionManager()
+    objects = SubscriptionQuerySet.as_manager()
 
     class Meta:
         verbose_name = _("Subscription")
@@ -174,7 +187,7 @@ class Subscription(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"user: {self.user.pk} - tier: {self.plan.pk}"
+        return f"user: {self.user_id} - payment: {self.payment_id}"
 
     @property
     def is_active(self):
@@ -194,7 +207,7 @@ class Subscription(models.Model):
             self.end_at = self.start_at
 
 
-class Order(models.Model):
+class Payment(models.Model):
 
     PENDING = 1
     HOLD = 2
@@ -213,10 +226,17 @@ class Order(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    external_id = models.CharField(_("external_id"), max_length=128)
     user = models.ForeignKey(
         "accounts.SSOUser",
         verbose_name=_("user"),
-        related_name="orders",
+        related_name="payments",
+        on_delete=models.CASCADE,
+    )
+    processor = models.ForeignKey(
+        "Processor",
+        verbose_name=_("processor"),
+        related_name="payments",
         on_delete=models.CASCADE,
     )
     amount = models.DecimalField(_("amount"), max_digits=16, decimal_places=2)
@@ -226,22 +246,19 @@ class Order(models.Model):
     status = models.PositiveIntegerField(_("status"), choices=STATUSES, default=PENDING)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
-    extra_data = JSONField(_("extra data"), null=True)
 
     class Meta:
-        verbose_name = _("Order")
-        verbose_name_plural = _("Orders")
+        verbose_name = _("Payment")
+        verbose_name_plural = _("Payments")
         ordering = ["-created_at"]
+        unique_together = ("id", "external_id")
 
     def __str__(self):
         return f"#{self.pk} ({self.get_status_display()})"
 
+    @property
     def expired_at(self):
         return self.created_at + timedelta(days=3)
-
-    @property
-    def payment_id(self):
-        return self.pk.hex
 
 
 class Processor(models.Model):
@@ -355,41 +372,3 @@ class Processor(models.Model):
             )
 
         raise NotImplementedError("provider not set")
-
-
-class PaymentReference(models.Model):
-    content_type = models.ForeignKey(
-        ContentType,
-        on_delete=models.CASCADE,
-        verbose_name=_("Content Type"),
-        help_text=_("The type of object this payment relates to"),
-    )
-    object_id = models.PositiveIntegerField(
-        verbose_name=_("Object ID"), help_text=_("The ID of the related object")
-    )
-    content_object = GenericForeignKey("content_type", "object_id")
-
-    processor = models.ForeignKey(
-        "Processor",
-        on_delete=models.CASCADE,
-        verbose_name=_("Processor"),
-        help_text=_("The payment processor service"),
-    )
-    external_id = models.CharField(
-        max_length=128,
-        verbose_name=_("External ID"),
-        help_text=_("Unique identifier from the payment provider"),
-    )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
-
-    class Meta:
-        verbose_name = _("Payment Reference")
-        verbose_name_plural = _("Payment References")
-        unique_together = ("processor", "external_id")
-        ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["content_type", "object_id"]),
-        ]
-
-    def __str__(self):
-        return f"{self.processor}:{self.object_id} (ID: {self.external_id})"
