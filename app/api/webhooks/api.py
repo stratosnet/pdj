@@ -120,11 +120,11 @@ def webhook_paypal(
 @transaction.atomic
 def on_payment_completed(external_id: str, amount: Decimal, currency: str):
     last_payment = (
-        Payment.objects.select_related("user", "processor")
+        Payment.objects.select_related("user", "processor", "subscription__plan")
         .filter(external_id=external_id)
         .first()
     )
-    if not last_payment:
+    if not last_payment or not last_payment.subscription:
         raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
 
     payment = Payment.objects.create(
@@ -138,7 +138,9 @@ def on_payment_completed(external_id: str, amount: Decimal, currency: str):
 
     now = timezone.now()
 
-    sub = Subscription.objects.get_active_last(payment.user.pk)
+    sub = Subscription.objects.get_active_last(
+        plan_id=last_payment.subscription.plan.pk, user_id=payment.user.pk
+    )
     if not sub:
         raise SubscriptionNotFound(
             "Subscription does not exist to perform recurring payment"
@@ -182,12 +184,11 @@ def on_subscription_create(
     else:
         raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
 
-    sub = Subscription.objects.get_active_last(payment.user.pk)
+    plan = Plan.objects.filter(links__external_id=plan_id).first()
+    sub = Subscription.objects.get_active_last(plan_id=plan.pk, user_id=payment.user.pk)
     if sub:
         sub.end_at = start_at
         sub.update(update_fields=["end_at"])
-
-    plan = Plan.objects.filter(links__external_id=plan_id).first()
 
     Subscription.objects.create(
         user=payment.user,

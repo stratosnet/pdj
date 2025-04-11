@@ -25,6 +25,9 @@ class SubscriptionAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("user", "plan", "payment")
 
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
@@ -41,6 +44,9 @@ class PaymentAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("user", "processor")
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Processor)

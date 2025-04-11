@@ -49,10 +49,10 @@ class Plan(models.Model):
     YEAR = 4
 
     PERIODS = (
-        (DAY, _("Day")),
-        (WEEK, _("Week")),
-        (MONTH, _("Month")),
-        (YEAR, _("Year")),
+        (DAY, "DAY"),
+        (WEEK, "WEEK"),
+        (MONTH, "MONTH"),
+        (YEAR, "YEAR"),
     )
 
     client = models.ForeignKey(
@@ -137,12 +137,13 @@ class SubscriptionQuerySet(models.QuerySet):
             Q(end_at__gte=now) | Q(end_at__isnull=True),
         ).order_by("-created_at")
 
-    def get_active_last(self, user_id: int, is_recurring: bool = True):
+    def get_active_last(self, plan_id: int, user_id: int, is_recurring: bool = True):
         now = timezone.now()
         return (
             self.filter(
                 Q(
                     user_id=user_id,
+                    plan_id=plan_id,
                     plan__is_recurring=is_recurring,
                     start_at__lte=now,
                 ),
@@ -336,8 +337,8 @@ class Processor(models.Model):
     )
     def webhook_url(self):
         path = reverse("api-1.0.0:webhook_paypal", args=(self.webhook_secret,))
-        if settings.PAYMENT_DOMAIN:
-            return urljoin(settings.PAYMENT_DOMAIN, path)
+        if settings.PDJ_PAY_DOMAIN:
+            return urljoin(settings.PDJ_PAY_DOMAIN, path)
 
         request = get_current_request()
         return request.build_absolute_uri(path)

@@ -1,6 +1,6 @@
 services:
-  web:
-    container_name: web
+  pdj:
+    container_name: pdj
     build:
       context: .
       args:
@@ -12,8 +12,8 @@ services:
     tty: true
     volumes:
       - ./app:/app
-      - static_volume:/var/www/web/static
-      - media_volume:/var/www/web/media
+      - static_volume:/var/www/pdj/static
+      - media_volume:/var/www/pdj/media
     command: python manage.py runserver 0.0.0.0:8000
     # command: /bin/sh
     ports:
@@ -29,6 +29,7 @@ services:
       options:
         max-size: "128m"
   celery_worker:
+    container_name: pdj_worker
     restart: always
     stdin_open: true
     tty: true
@@ -49,6 +50,7 @@ services:
       - postgres
       - redis
   celery_beat:
+    container_name: pdj_beat
     restart: always
     build:
       context: .

@@ -84,6 +84,8 @@ def paypal_sync_plans():
                         if plan.description
                         else f"Description for the plan: {plan.name}"
                     )
+                    if len(description) > 127:
+                        description = description[:124] + "..."
 
                     try:
                         resp = paypal_client.create_subscription_plan(

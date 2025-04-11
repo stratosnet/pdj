@@ -41,7 +41,6 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 # Application definition
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -50,10 +49,16 @@ INSTALLED_APPS = [
     # 3rd party
     "django_extensions",
     "ninja",
+    "admin_interface",
+    "colorfield",
+    "django.contrib.admin",
     # local
     "accounts",
     "payments",
 ]
+
+X_FRAME_OPTIONS = "SAMEORIGIN"
+SILENCED_SYSTEM_CHECKS = ["security.W019"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -218,8 +223,8 @@ STATIC_URL = "static/"
 MEDIA_URL = "media/"
 
 # dockerized volumes
-STATIC_ROOT = env("STATIC_ROOT", default="/var/www/web/static/")
-MEDIA_ROOT = env("MEDIA_ROOT", default="/var/www/web/media/")
+STATIC_ROOT = env("STATIC_ROOT", default="/var/www/pdj/static/")
+MEDIA_ROOT = env("MEDIA_ROOT", default="/var/www/pdj/media/")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -233,7 +238,22 @@ OIDC_CLIENT_SECRET = env("OIDC_CLIENT_SECRET")
 
 # payments
 DEFAULT_CURRENCY = env("DEFAULT_CURRENCY", default="USD")
-PAYMENT_DOMAIN = env("PAYMENT_DOMAIN")
+
+# ninja
+NINJA_PAGINATION_PER_PAGE = 10
+NINJA_PAGINATION_MAX_LIMIT = 20
+
+# pdj
+PDJ_TITLE_NAME = env("PDJ_TITLE_NAME", default="PDJ")
+PDJ_MAIN_USER_EMAIL = env("PDJ_MAIN_USER_EMAIL")
+PDJ_MAIN_USER_PASSWORD = env("PDJ_MAIN_USER_PASSWORD")
+PDJ_CLIENT_ID = env("PDJ_CLIENT_ID")
+PDJ_CLIENT_SECRET = env("PDJ_CLIENT_SECRET")
+PDJ_PAY_DOMAIN = env("PDJ_PAY_DOMAIN")
+PDJ_PAYPAL_CLIENT_ID = env("PDJ_PAYPAL_CLIENT_ID")
+PDJ_PAYPAL_CLIENT_SECRET = env("PDJ_PAYPAL_CLIENT_SECRET")
+PDJ_PAYPAL_ENDPOINT_SECRET = env("PDJ_PAYPAL_ENDPOINT_SECRET")
+PDJ_PAYPAL_IS_SANDBOX = env.bool("PDJ_PAYPAL_IS_SANDBOX")
 
 # celery
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/1")
@@ -246,6 +266,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "payments.tasks.paypal_sync_plans",
         "schedule": 30,
         "args": tuple(),
+    },
+}
+
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "admin_interface": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "TIMEOUT": 60 * 5,
     },
 }
 

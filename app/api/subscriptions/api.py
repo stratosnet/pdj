@@ -40,6 +40,6 @@ def subscriptions_list(
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
     client_secret: str = Header(..., alias=CLIENT_SECRET_PARAM_NAME),
 ):
-    q = Q(plan__client=request.client) | Q(plan__is_enabled=True)
+    q = Q(plan__client=request.client, plan__is_enabled=True)
     q &= filters.get_filter_expression()
     return Subscription.objects.filter(q)

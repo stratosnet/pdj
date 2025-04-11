@@ -40,6 +40,6 @@ def plans_list(
     filters: PlanFilterSchema = Query(...),
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
-    q = Q(client=request.client) | Q(is_enabled=True)
+    q = Q(client=request.client, is_enabled=True)
     q &= filters.get_filter_expression()
     return Plan.objects.filter(q)

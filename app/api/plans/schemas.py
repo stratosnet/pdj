@@ -9,13 +9,14 @@ class PlanFilterSchema(FilterSchema):
 
 
 class PlanSchema(ModelSchema):
+    period: str = Field(..., alias="get_period_display")
+
     class Meta:
         model = Plan
         fields = [
             "id",
             "name",
             "description",
-            "period",
             "term",
             "price",
             "is_recurring",

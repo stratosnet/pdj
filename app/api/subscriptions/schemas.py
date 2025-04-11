@@ -22,13 +22,12 @@ class SubscriptionFilterSchema(FilterSchema):
 class SubscriptionSchema(ModelSchema):
     user: UserSchema
     plan: PlanSchema
-    # order
+    is_active: bool
 
     class Meta:
         model = Subscription
         fields = [
             "id",
-            # "is_active",
             "start_at",
             "end_at",
             "created_at",
