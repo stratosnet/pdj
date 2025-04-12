@@ -1,15 +1,15 @@
 from ninja import Schema, ModelSchema, FilterSchema, Field
 
 from ..plans.schemas import PlanSchema
-from accounts.models import SSOUser
+from accounts.models import User
 from payments.models import Subscription
 
 
 class UserSchema(ModelSchema):
     class Meta:
-        model = SSOUser
+        model = User
         fields = [
-            "sub",
+            "email",
         ]
 
 

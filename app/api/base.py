@@ -11,7 +11,7 @@ from .subscriptions.api import router as subscriptions_router
 from .webhooks.api import router as webhooks_router
 
 
-api = NinjaAPI(title=f"{settings.PDJ_TITLE_NAME} API")
+api = NinjaAPI(title=f"{settings.PDJ_TITLE_NAME} API", csrf=False)
 
 api.add_router("/users/", users_router)
 api.add_router("/plans/", plans_router)

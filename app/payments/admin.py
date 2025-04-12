@@ -13,26 +13,42 @@ from .models import (
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
     list_display = [
-        "id",
+        "pk",
         "user",
         "plan",
         "payment",
+        "is_active",
         "start_at",
         "end_at",
+        "next_billing_at",
+        "created_at",
+    ]
+    fields = [
+        "user",
+        "plan",
+        "payment",
+        "is_active",
+        "start_at",
+        "end_at",
+        "next_billing_at",
+        "created_at",
+    ]
+    readonly_fields = [
+        "is_active",
+        "payment",
+        "next_billing_at",
+        "start_at",
         "created_at",
     ]
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("user", "plan", "payment")
 
-    def has_change_permission(self, request, obj=None):
-        return False
-
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = [
-        "id",
+        "pk",
         "external_id",
         "user",
         "processor",
@@ -52,7 +68,7 @@ class PaymentAdmin(admin.ModelAdmin):
 @admin.register(Processor)
 class ProcessorAdmin(admin.ModelAdmin):
     list_display = [
-        "id",
+        "pk",
         "processor_type",
         "hidden_client_id",
         "hidden_secret",
@@ -73,7 +89,7 @@ class ProcessorAdmin(admin.ModelAdmin):
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
     list_display = [
-        "id",
+        "pk",
         "name",
         "client",
         "duration",
@@ -91,7 +107,7 @@ class PlanAdmin(admin.ModelAdmin):
 @admin.register(PlanProcessorLink)
 class PlanProcessorLinkAdmin(admin.ModelAdmin):
     list_display = [
-        "id",
+        "pk",
         "plan",
         "processor",
         "external_id",

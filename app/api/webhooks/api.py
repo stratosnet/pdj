@@ -147,7 +147,7 @@ def on_payment_completed(external_id: str, amount: Decimal, currency: str):
         )
 
     sub.end_at = now
-    sub.update(update_fields=["end_at"])
+    sub.save(update_fields=["end_at"])
 
     sub = Subscription.objects.create(
         user=payment.user,
@@ -188,12 +188,12 @@ def on_subscription_create(
     sub = Subscription.objects.get_active_last(plan_id=plan.pk, user_id=payment.user.pk)
     if sub:
         sub.end_at = start_at
-        sub.update(update_fields=["end_at"])
+        sub.save(update_fields=["end_at"])
 
     Subscription.objects.create(
         user=payment.user,
         plan=plan,
         payment=payment,
         start_at=start_at,
-        end_at=end_at,
+        next_billing_at=end_at,
     )

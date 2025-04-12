@@ -1,6 +1,6 @@
 from ninja import Schema, ModelSchema
 
-from accounts.models import SSOUser
+from accounts.models import User
 from payments.models import Subscription
 
 
@@ -22,9 +22,9 @@ class MeSchema(ModelSchema):
     subscriptions: list[SubscriptionSchema] = []
 
     class Meta:
-        model = SSOUser
+        model = User
         fields = [
-            "sub",
+            "email",
         ]
 
 
@@ -33,8 +33,12 @@ class CheckoutSchema(Schema):
     payment_method_id: int
 
 
-class SubscriptionChangeSchema(Schema):
+class SubscriptionCancelSchema(Schema):
     reason: str
+
+
+class SubscriptionSwitchSchema(Schema):
+    to_plan_id: int
 
 
 class LinkSchema(Schema):

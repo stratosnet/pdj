@@ -112,9 +112,7 @@ class Command(BaseCommand):
             else None
         )
         if email and not User.objects.filter(email=email).exists():
-            User.objects.create_superuser(
-                username=email, email=email, password=password
-            )
+            User.objects.create_superuser(email=email, password=password)
             self.stdout.write(self.style.SUCCESS("Main user initialized"))
 
         if not Client.objects.first():

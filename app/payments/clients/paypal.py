@@ -38,9 +38,12 @@ class OriginalPayPalClient:
             "Content-Type": "application/json",
         }
 
-    def _make_request(self, url: str, method: str, **kwargs) -> Response:
+    def _make_request(
+        self, url: str, method: str, raise_on_code=True, **kwargs
+    ) -> Response:
         response = requests.request(method, url, **kwargs)
-        response.raise_for_status()
+        if raise_on_code:
+            response.raise_for_status()
         return response
 
     def _get_access_token(self) -> str:
@@ -61,12 +64,13 @@ class OriginalPayPalClient:
         return response.json()["access_token"]
 
     def create_billing_subscription(
-        self, plan_id: str, custom_id: str, return_url: str, cancel_url: str
+        self,
+        plan_id: str,
+        custom_id: str,
+        *,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> dict[str, Any]:
-        print("plan_id", plan_id)
-        print("custom_id", custom_id)
-        print("return_url", return_url)
-        print("cancel_url", cancel_url)
         data = {
             "plan_id": plan_id,
             "custom_id": custom_id,
@@ -85,6 +89,27 @@ class OriginalPayPalClient:
 
         url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/cancel"
         self._make_request(url=url, method="POST", json=data, headers=self.headers)
+
+    def revise_billing_subscription(
+        self,
+        subscription_id: str,
+        plan_id: str,
+        *,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
+    ) -> dict[str, Any]:
+        data = {
+            "plan_id": plan_id,
+            "application_context": {"return_url": return_url, "cancel_url": cancel_url},
+        }
+
+        url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/revise"
+        return self._make_request(
+            url=url,
+            method="POST",
+            json=data,
+            headers=self.headers,
+        ).json()
 
     def create_subscription_plan(
         self,
@@ -201,24 +226,62 @@ class OriginalPayPalClient:
 
 class PayPalClient(PaymentClient, OriginalPayPalClient):
 
+    @staticmethod
+    def get_hateoas_url(links: list[dict[str, str]], rel="approve"):
+        return next((link["href"] for link in links if link["rel"] == rel), None)
+
     def generate_subscription_data(
-        self, plan_id: str, order_id: str, return_url: str, cancel_url: str
+        self,
+        plan_id: str,
+        custom_id: str,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> dict[str, str] | None:
         try:
-            sub = self.create_billing_subscription(
-                plan_id, order_id, return_url, cancel_url
+            resp = self.create_billing_subscription(
+                plan_id, custom_id, return_url=return_url, cancel_url=cancel_url
             )
         except requests.exceptions.HTTPError as e:
             logger.error(e.response.text)
             return None
 
-        try:
-            data = {}
-            data["id"] = sub["id"]
-            data["url"] = sub.get("links", [])[0].get("href")
-            return data
-        except IndexError:
-            return None
+        data = {}
+        logger.info(f"generate_subscription_data resp: {resp}")
+        data["id"] = resp["id"]
+        data["url"] = self.get_hateoas_url(resp.get("links", []))
+        return data
 
     def cancel_subscription(self, id: str, reason: str):
-        pass
+        try:
+            self.cancel_billing_subscription(id, reason)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                logger.warning(
+                    f"Failed to proceed subscription cancel, details: {e.response.text}"
+                )
+                return
+            raise e
+
+    def generate_change_subscription_data(
+        self,
+        id: str,
+        to_plan_id: str,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
+    ) -> dict[str, str] | None:
+        try:
+            resp = self.revise_billing_subscription(
+                id, to_plan_id, return_url=return_url, cancel_url=cancel_url
+            )
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                logger.warning(
+                    f"Failed to proceed subscription change, details: {e.response.text}"
+                )
+                return
+            raise e
+
+        data = {}
+        logger.info(f"generate_change_subscription_data resp: {resp}")
+        data["url"] = self.get_hateoas_url(resp.get("links", []))
+        return data

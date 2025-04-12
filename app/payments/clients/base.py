@@ -5,6 +5,24 @@ from abc import ABC, abstractmethod
 class PaymentClient(ABC):
     @abstractmethod
     def generate_subscription_data(
-        self, plan_id: str, order_id: str, return_url: str, cancel_url: str
+        self,
+        plan_id: str,
+        custom_id: str,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
+    ) -> dict[str, str] | None:
+        pass
+
+    @abstractmethod
+    def cancel_subscription(self, id: str, reason: str):
+        pass
+
+    @abstractmethod
+    def generate_change_subscription_data(
+        self,
+        id: str,
+        to_plan_id: str,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> dict[str, str] | None:
         pass

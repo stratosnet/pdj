@@ -13,7 +13,7 @@ def mask_secret(text: str, keep_first=4):
 
 def generate_sku_prefix(length=4):
     characters = string.ascii_uppercase
-    return "".join(random.choice(characters) for _ in range(length)).capitalize()
+    return "".join(random.choice(characters) for _ in range(length))
 
 
 def generate_enpoint_secret(length=30):

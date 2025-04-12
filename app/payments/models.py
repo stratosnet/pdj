@@ -29,16 +29,16 @@ class PlanProcessorLink(models.Model):
     processor = models.ForeignKey(
         "Processor",
         on_delete=models.CASCADE,
-        verbose_name=_("Processor"),
+        verbose_name=_("processor"),
         related_name="links",
-        help_text=_("The payment processor service"),
+        help_text=_("the payment processor service"),
     )
     external_id = models.CharField(_("external_id"), max_length=128, unique=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
 
     class Meta:
-        verbose_name = _("Plan processor link")
-        verbose_name_plural = _("Plan processor links")
+        verbose_name = _("plan processor link")
+        verbose_name_plural = _("plan processor links")
         ordering = ["-created_at"]
 
 
@@ -59,54 +59,54 @@ class Plan(models.Model):
         "accounts.Client",
         related_name="plans",
         on_delete=models.CASCADE,
-        verbose_name=_("Client"),
-        help_text=_("The client for plan"),
+        verbose_name=_("client"),
+        help_text=_("the client for plan"),
     )
     name = models.CharField(
-        max_length=128, verbose_name=_("Name"), help_text=_("Name of the plan")
+        max_length=128, verbose_name=_("name"), help_text=_("name of the plan")
     )
     description = models.TextField(
         null=True,
         blank=True,
-        verbose_name=_("Description"),
-        help_text=_("Description of a plan"),
+        verbose_name=_("description"),
+        help_text=_("description of a plan"),
     )
     period = models.PositiveIntegerField(
         choices=PERIODS,
-        verbose_name=_("Period"),
-        help_text=_("Billing period duration type"),
+        verbose_name=_("period"),
+        help_text=_("billing period duration type"),
     )
-    term = models.IntegerField(
+    term = models.PositiveIntegerField(
         default=1,
-        verbose_name=_("Term"),
-        help_text=_("Number of periods (e.g., 1 month, 2 years)"),
+        verbose_name=_("term"),
+        help_text=_("number of periods (e.g., 1 month, 2 years)"),
     )
     price = models.DecimalField(
         max_digits=40,
         decimal_places=2,
-        verbose_name=_("Price"),
-        help_text=_("Price of the plan in the specified currency"),
+        verbose_name=_("price"),
+        help_text=_("price of the plan in the specified currency"),
     )
     is_recurring = models.BooleanField(
         default=True,
-        verbose_name=_("Is Recurring"),
-        help_text=_("Whether the plan automatically renews"),
+        verbose_name=_("is recurring"),
+        help_text=_("whether the plan automatically renews"),
     )
     is_enabled = models.BooleanField(
         default=False,
-        verbose_name=_("Is Enabled"),
-        help_text=_("Whether the plan is available for use"),
+        verbose_name=_("is enabled"),
+        help_text=_("whether the plan is available for use"),
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
-        verbose_name=_("Created At"),
-        help_text=_("Date and time the plan was created"),
+        verbose_name=_("created at"),
+        help_text=_("date and time the plan was created"),
     )
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     class Meta:
-        verbose_name = _("Plan")
-        verbose_name_plural = _("Plans")
+        verbose_name = _("plan")
+        verbose_name_plural = _("plans")
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -115,7 +115,7 @@ class Plan(models.Model):
     @property
     @admin.display(
         ordering="period",
-        description=_("Duration"),
+        description=_("duration"),
     )
     def duration(self):
         term_suffix = "s" if self.term > 1 else ""
@@ -137,26 +137,25 @@ class SubscriptionQuerySet(models.QuerySet):
             Q(end_at__gte=now) | Q(end_at__isnull=True),
         ).order_by("-created_at")
 
-    def get_active_last(self, plan_id: int, user_id: int, is_recurring: bool = True):
+    def get_active_last(
+        self, user_id: int, *, plan_id: int | None, is_recurring: bool = True
+    ):
         now = timezone.now()
-        return (
-            self.filter(
-                Q(
-                    user_id=user_id,
-                    plan_id=plan_id,
-                    plan__is_recurring=is_recurring,
-                    start_at__lte=now,
-                ),
-                Q(end_at__gte=now) | Q(end_at__isnull=True),
-            )
-            .order_by("-created_at")
-            .first()
+        q = Q(
+            user_id=user_id,
+            plan__is_recurring=is_recurring,
+            start_at__lte=now,
         )
+        if plan_id:
+            q &= Q(plan_id=plan_id)
+
+        q &= Q(end_at__gte=now) | Q(end_at__isnull=True)
+        return self.filter(q).order_by("-created_at").first()
 
 
 class Subscription(models.Model):
     user = models.ForeignKey(
-        "accounts.SSOUser",
+        settings.AUTH_USER_MODEL,
         verbose_name=_("user"),
         related_name="subscriptions",
         on_delete=models.CASCADE,
@@ -175,25 +174,38 @@ class Subscription(models.Model):
         null=True,
         blank=True,
     )
-    start_at = models.DateTimeField(_("start at"), editable=False)
-    end_at = models.DateTimeField(_("end at"), null=True, blank=True, editable=False)
+    start_at = models.DateTimeField(_("start at"))
+    end_at = models.DateTimeField(_("end at"), null=True, blank=True)
+    next_billing_at = models.DateTimeField(_("next billing at"), null=True, blank=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     objects = SubscriptionQuerySet.as_manager()
 
     class Meta:
-        verbose_name = _("Subscription")
-        verbose_name_plural = _("Subscriptions")
+        verbose_name = _("subscription")
+        verbose_name_plural = _("subscriptions")
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"user: {self.user_id} - payment: {self.payment_id}"
 
     @property
+    @admin.display(
+        description=_("is active"),
+        boolean=True,
+    )
     def is_active(self):
         now = timezone.now()
-        return self.start_at < now and (now < self.end_at or not self.end_at)
+        return self.start_at < now and (
+            (self.end_at and now < self.end_at) or not self.end_at
+        )
+
+    def clean(self):
+        if self.end_at and self.end_at <= self.start_at:
+            raise ValidationError(
+                _("Subscription end date should be more then start date")
+            )
 
     def update_end_date(self):
         if self.plan.period == self.plan.DAY:
@@ -229,7 +241,7 @@ class Payment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.CharField(_("external_id"), max_length=128)
     user = models.ForeignKey(
-        "accounts.SSOUser",
+        settings.AUTH_USER_MODEL,
         verbose_name=_("user"),
         related_name="payments",
         on_delete=models.CASCADE,
@@ -249,8 +261,8 @@ class Payment(models.Model):
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     class Meta:
-        verbose_name = _("Payment")
-        verbose_name_plural = _("Payments")
+        verbose_name = _("payment")
+        verbose_name_plural = _("payments")
         ordering = ["-created_at"]
         unique_together = ("id", "external_id")
 
@@ -270,69 +282,73 @@ class Processor(models.Model):
     processor_type = models.CharField(
         max_length=20,
         choices=PROCESSOR_CHOICES,
-        verbose_name=_("Processor Type"),
-        help_text=_("The payment processor type"),
+        verbose_name=_("processor type"),
+        help_text=_("the payment processor type"),
     )
 
     client_id = models.CharField(
         max_length=255,
         blank=True,
         null=True,
-        verbose_name=_("Client ID"),
-        help_text=_("Client ID"),
+        verbose_name=_("client ID"),
+        help_text=_("client ID"),
     )
     secret = models.CharField(
         max_length=255,
-        verbose_name=_("Secret"),
-        help_text=_("Secret"),
+        verbose_name=_("secret"),
+        help_text=_("secret"),
     )
 
     endpoint_secret = models.CharField(
         max_length=255,
         blank=True,
         null=True,
-        verbose_name=_("Endpoint Secret"),
-        help_text=_("Secret used to verify webhook payloads for provider (optional)"),
+        verbose_name=_("endpoint secret"),
+        help_text=_("secret used to verify webhook payloads for provider (optional)"),
     )
     webhook_secret = models.CharField(
         max_length=40,
         unique=True,
-        verbose_name=_("Webhook Secret"),
-        help_text=_("Secret used to create link for webhook route"),
+        verbose_name=_("webhook secret"),
+        help_text=_("secret used to create link for webhook route"),
         editable=False,
         default=generate_enpoint_secret,
     )
 
     is_sandbox = models.BooleanField(
         default=True,
-        verbose_name=_("Is Sandbox"),
-        help_text=_("Indicates if these credentials relates to sandbox"),
+        verbose_name=_("is sandbox"),
+        help_text=_("indicates if these credentials relates to sandbox"),
     )
     is_enabled = models.BooleanField(
         default=False,
-        verbose_name=_("Is Active"),
-        help_text=_("Indicates if these credentials are currently active"),
+        verbose_name=_("is active"),
+        help_text=_("indicates if these credentials are currently active"),
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
-    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
 
     class Meta:
-        verbose_name = _("Processor")
-        verbose_name_plural = _("Processors")
+        verbose_name = _("processor")
+        verbose_name_plural = _("processors")
         ordering = ["processor_type"]
-        unique_together = ("processor_type", "secret")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["processor_type", "secret"], name="unique_processor_type_secret"
+            ),
+        ]
 
     def __str__(self):
         return self.get_processor_type_display()
 
     def clean(self):
         if self.processor_type == self.PAYPAL and not self.client_id:
-            raise ValidationError(_("PayPal requires a Client ID"))
+            raise ValidationError(_("PayPal requires a client ID"))
 
     @property
     @admin.display(
         ordering="webhook_secret",
-        description=_("Webhook URL"),
+        description=_("webhook URL"),
         boolean=False,
     )
     def webhook_url(self):
@@ -346,7 +362,7 @@ class Processor(models.Model):
     @property
     @admin.display(
         ordering="client_id",
-        description=_("Client ID"),
+        description=_("client ID"),
         boolean=False,
     )
     def hidden_client_id(self):
@@ -358,7 +374,7 @@ class Processor(models.Model):
     @property
     @admin.display(
         ordering="secret",
-        description=_("Secret"),
+        description=_("secret"),
         boolean=False,
     )
     def hidden_secret(self):
