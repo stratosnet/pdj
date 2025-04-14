@@ -1,14 +1,17 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.contrib.auth.hashers import make_password
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
-from core.utils import generate_sku_prefix, generate_client_key
+from core.utils import generate_sku_prefix, generate_base_secret
 
 
 class Client(models.Model):
-
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(
         max_length=20,
         verbose_name=_("name"),
@@ -27,7 +30,7 @@ class Client(models.Model):
         unique=True,
         editable=False,
         help_text=_("client ID"),
-        default=generate_client_key,
+        default=generate_base_secret,
     )
     client_secret = models.CharField(
         _("client secret"),
@@ -35,13 +38,13 @@ class Client(models.Model):
         unique=True,
         editable=False,
         help_text=_("client secret"),
-        default=generate_client_key,
+        default=generate_base_secret,
     )
 
     product_name = models.CharField(
         max_length=80,
         verbose_name=_("product name"),
-        help_text=_("escription of a product which provided by client"),
+        help_text=_("description of a product which provided by client"),
     )
     sku_prefix = models.CharField(
         max_length=4,
@@ -49,22 +52,26 @@ class Client(models.Model):
         verbose_name=_("SKU prefix"),
         default=generate_sku_prefix,
         help_text=_(
-            "SKU prefix for the product (if not set, will be automatically generated)"
+            "SKU prefix for the product (will be automatically generated if skipped)"
         ),
     )
-    image_url = models.URLField(
-        _("image url"),
-        help_text=_("The image URL for the product"),
-        null=True,
-        blank=True,
-    )
-    home_url = models.URLField(
-        _("home url"),
-        help_text=_("The home page URL for the product"),
+    return_url = models.URLField(
+        verbose_name=_("кeturn URL"),
+        help_text=_(
+            "the URL of the product page where users are redirected after completing a payment."
+        ),
         null=True,
         blank=True,
     )
 
+    cancel_url = models.URLField(
+        verbose_name=_("Cancel URL"),
+        help_text=_(
+            "the URL of the product page where users are redirected if they cancel the payment. If not provided, the Return URL will be used."
+        ),
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
     is_enabled = models.BooleanField(
@@ -86,6 +93,10 @@ class Client(models.Model):
             self.sku_prefix = generate_sku_prefix()
         else:
             self.sku_prefix = self.sku_prefix.upper()
+
+    @cached_property
+    def product_id(self):
+        return f"{self.sku_prefix}-{self.pk}"
 
 
 class UserManager(BaseUserManager):
@@ -121,7 +132,7 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractUser):
-    username = None
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(_("email address"), unique=True)
     username = None
     USERNAME_FIELD = "email"
@@ -136,6 +147,12 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
+    @cached_property
+    def sub(self):
+        sso = self.sso_identities.first()
+        if sso:
+            return str(sso.sub)
+
 
 class SSOIdentity(models.Model):
     sub = models.UUIDField(
@@ -148,7 +165,8 @@ class SSOIdentity(models.Model):
         settings.AUTH_USER_MODEL,
         verbose_name=_("user"),
         on_delete=models.CASCADE,
-        related_name="identities",
+        related_name="sso_identities",
+        unique=True,
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
 

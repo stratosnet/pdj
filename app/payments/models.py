@@ -2,16 +2,19 @@ import uuid
 from datetime import timedelta
 from urllib.parse import urljoin
 
+from django.core.validators import RegexValidator
 from django.db import models
-from django.db.models import JSONField, Q
+from django.db.models import Q
 from django.utils import timezone
 from django.conf import settings
 from django.contrib import admin
 from django.urls import reverse
+from django.utils.text import slugify
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 
-from core.utils import mask_secret, generate_enpoint_secret
+from core.utils import mask_secret, generate_base_secret
 from core.middleware import get_current_request
 
 from .clients.base import PaymentClient
@@ -19,7 +22,7 @@ from .clients.paypal import PayPalClient
 
 
 class PlanProcessorLink(models.Model):
-
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     plan = models.ForeignKey(
         "Plan",
         verbose_name=_("plan"),
@@ -55,26 +58,45 @@ class Plan(models.Model):
         (YEAR, "YEAR"),
     )
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     client = models.ForeignKey(
         "accounts.Client",
         related_name="plans",
         on_delete=models.CASCADE,
         verbose_name=_("client"),
-        help_text=_("the client for plan"),
+        help_text=_("The client for plan"),
     )
     name = models.CharField(
-        max_length=128, verbose_name=_("name"), help_text=_("name of the plan")
+        max_length=128, verbose_name=_("name"), help_text=_("Name of the plan")
+    )
+    code = models.CharField(
+        max_length=128,
+        unique=True,
+        blank=True,
+        null=True,
+        validators=[
+            RegexValidator(
+                regex=r"^[a-z0-9-]+$",
+                message=_(
+                    "Code must contain only lowercase letters, numbers, or hyphens"
+                ),
+            )
+        ],
+        verbose_name=_("code"),
+        help_text=_(
+            "Unique, machine-readable name for the plan (e.g., for syncing with external systems)"
+        ),
     )
     description = models.TextField(
         null=True,
         blank=True,
         verbose_name=_("description"),
-        help_text=_("description of a plan"),
+        help_text=_("Description of a plan"),
     )
     period = models.PositiveIntegerField(
         choices=PERIODS,
         verbose_name=_("period"),
-        help_text=_("billing period duration type"),
+        help_text=_("Billing period duration type"),
     )
     term = models.PositiveIntegerField(
         default=1,
@@ -85,22 +107,24 @@ class Plan(models.Model):
         max_digits=40,
         decimal_places=2,
         verbose_name=_("price"),
-        help_text=_("price of the plan in the specified currency"),
+        help_text=_(
+            "Number of periods for the subscription (e.g., if period is MONTH and term is 2, the subscription lasts 2 months)."
+        ),
     )
     is_recurring = models.BooleanField(
         default=True,
         verbose_name=_("is recurring"),
-        help_text=_("whether the plan automatically renews"),
+        help_text=_("Whether the plan automatically renews"),
     )
     is_enabled = models.BooleanField(
         default=False,
         verbose_name=_("is enabled"),
-        help_text=_("whether the plan is available for use"),
+        help_text=_("Whether the plan is available for use"),
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name=_("created at"),
-        help_text=_("date and time the plan was created"),
+        help_text=_("Date and time the plan was created"),
     )
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
@@ -110,20 +134,26 @@ class Plan(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.name} (Price: {self.price})"
+        return f"{self.name} (price: {self.price})"
 
     @property
     @admin.display(
         ordering="period",
-        description=_("duration"),
+        description=_("Billing frequency"),
     )
     def duration(self):
-        term_suffix = "s" if self.term > 1 else ""
-        return _("%(period)sly for %(term)d %(period)s%(term_suffix)s") % {
-            "term_suffix": term_suffix,
-            "period": self.get_period_display(),
+        period_name = self.get_period_display().lower()
+        if self.term == 1:
+            return _("Billed every %(period_name)s") % {"period_name": period_name}
+        return _("Billed once every %(term)d %(period_name)ss") % {
             "term": self.term,
+            "period_name": period_name,
         }
+
+    def get_payment_methods(self):
+        """Helper for schemas to get directly all processor as payment method"""
+        for link in self.links.all():
+            yield link.processor
 
 
 class SubscriptionQuerySet(models.QuerySet):
@@ -154,6 +184,7 @@ class SubscriptionQuerySet(models.QuerySet):
 
 
 class Subscription(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name=_("user"),
@@ -163,7 +194,7 @@ class Subscription(models.Model):
     plan = models.ForeignKey(
         "Plan",
         verbose_name=_("plan"),
-        related_name="payments",
+        related_name="subscriptions",
         on_delete=models.CASCADE,
     )
     payment = models.OneToOneField(
@@ -177,6 +208,14 @@ class Subscription(models.Model):
     start_at = models.DateTimeField(_("start at"))
     end_at = models.DateTimeField(_("end at"), null=True, blank=True)
     next_billing_at = models.DateTimeField(_("next billing at"), null=True, blank=True)
+    next_billing_plan = models.ForeignKey(
+        "Plan",
+        verbose_name=_("future plan"),
+        related_name="future_subscriptions",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
@@ -196,10 +235,16 @@ class Subscription(models.Model):
         boolean=True,
     )
     def is_active(self):
+        if not self.start_at:
+            return False
         now = timezone.now()
         return self.start_at < now and (
             (self.end_at and now < self.end_at) or not self.end_at
         )
+
+    @cached_property
+    def client(self):
+        return self.plan.client if self.plan else None
 
     def clean(self):
         if self.end_at and self.end_at <= self.start_at:
@@ -207,17 +252,16 @@ class Subscription(models.Model):
                 _("Subscription end date should be more then start date")
             )
 
-    def update_end_date(self):
-        if self.plan.period == self.plan.DAY:
-            self.end_at = self.start_at + timedelta(days=1 * self.plan.term)
-        elif self.plan.period == self.plan.WEEK:
-            self.end_at = self.start_at + timedelta(days=7 * self.plan.term)
-        elif self.plan.period == self.plan.MONTH:
-            self.end_at = self.start_at + timedelta(days=30 * self.plan.term)
-        elif self.plan.period == self.plan.YEAR:
-            self.end_at = self.start_at + timedelta(days=365 * self.plan.term)
-        else:
-            self.end_at = self.start_at
+    def get_next_end_date(self):
+        match self.plan.period:
+            case self.plan.DAY:
+                return self.start_at + timedelta(days=1 * self.plan.term)
+            case self.plan.WEEK:
+                return self.start_at + timedelta(days=7 * self.plan.term)
+            case self.plan.MONTH:
+                return self.start_at + timedelta(days=30 * self.plan.term)
+            case self.plan.YEAR:
+                return self.start_at + timedelta(days=365 * self.plan.term)
 
 
 class Payment(models.Model):
@@ -277,53 +321,51 @@ class Payment(models.Model):
 class Processor(models.Model):
     PAYPAL = "paypal"
 
-    PROCESSOR_CHOICES = ((PAYPAL, _("PayPal")),)
+    TYPES = ((PAYPAL, _("PayPal")),)
 
-    processor_type = models.CharField(
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    type = models.CharField(
         max_length=20,
-        choices=PROCESSOR_CHOICES,
+        choices=TYPES,
         verbose_name=_("processor type"),
-        help_text=_("the payment processor type"),
+        help_text=_("The payment processor type"),
     )
-
     client_id = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         verbose_name=_("client ID"),
-        help_text=_("client ID"),
+        help_text=_("Client ID"),
     )
     secret = models.CharField(
         max_length=255,
         verbose_name=_("secret"),
-        help_text=_("secret"),
+        help_text=_("Secret"),
     )
-
     endpoint_secret = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         verbose_name=_("endpoint secret"),
-        help_text=_("secret used to verify webhook payloads for provider (optional)"),
+        help_text=_("Secret used to verify webhook payloads for provider (optional)"),
     )
     webhook_secret = models.CharField(
         max_length=40,
         unique=True,
         verbose_name=_("webhook secret"),
-        help_text=_("secret used to create link for webhook route"),
+        help_text=_("Secret used to create link for webhook route"),
         editable=False,
-        default=generate_enpoint_secret,
+        default=generate_base_secret,
     )
-
     is_sandbox = models.BooleanField(
         default=True,
         verbose_name=_("is sandbox"),
-        help_text=_("indicates if these credentials relates to sandbox"),
+        help_text=_("Indicates if these credentials relates to sandbox"),
     )
     is_enabled = models.BooleanField(
         default=False,
         verbose_name=_("is active"),
-        help_text=_("indicates if these credentials are currently active"),
+        help_text=_("Indicates if these credentials are currently active"),
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
@@ -331,18 +373,18 @@ class Processor(models.Model):
     class Meta:
         verbose_name = _("processor")
         verbose_name_plural = _("processors")
-        ordering = ["processor_type"]
+        ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["processor_type", "secret"], name="unique_processor_type_secret"
+                fields=["type", "secret"], name="unique_processor_type_secret"
             ),
         ]
 
     def __str__(self):
-        return self.get_processor_type_display()
+        return self.get_type_display()
 
     def clean(self):
-        if self.processor_type == self.PAYPAL and not self.client_id:
+        if self.type == self.PAYPAL and not self.client_id:
             raise ValidationError(_("PayPal requires a client ID"))
 
     @property
@@ -381,7 +423,7 @@ class Processor(models.Model):
         return mask_secret(self.secret)
 
     def get_provider(self) -> PaymentClient:
-        if self.processor_type == Processor.PAYPAL:
+        if self.type == Processor.PAYPAL:
             return PayPalClient(
                 client_id=self.client_id,
                 client_secret=self.secret,

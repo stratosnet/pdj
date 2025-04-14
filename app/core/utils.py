@@ -16,9 +16,5 @@ def generate_sku_prefix(length=4):
     return "".join(random.choice(characters) for _ in range(length))
 
 
-def generate_enpoint_secret(length=30):
-    return secrets.token_urlsafe(length)
-
-
-def generate_client_key():
-    return binascii.hexlify(os.urandom(20)).decode()
+def generate_base_secret(length=20):
+    return binascii.hexlify(os.urandom(length)).decode()

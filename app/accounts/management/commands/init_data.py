@@ -11,7 +11,7 @@ from admin_interface.models import Theme
 
 from accounts.models import Client
 from payments.models import Processor
-from core.utils import generate_sku_prefix, generate_client_key
+from core.utils import generate_sku_prefix, generate_base_secret
 
 
 def generate_default_theme():
@@ -120,8 +120,8 @@ class Command(BaseCommand):
                 client_id = settings.PDJ_CLIENT_ID
                 client_secret = settings.PDJ_CLIENT_SECRET
             else:
-                client_id = generate_client_key()
-                client_secret = generate_client_key()
+                client_id = generate_base_secret()
+                client_secret = generate_base_secret()
 
             Client.objects.create(
                 name="Default",
@@ -136,7 +136,7 @@ class Command(BaseCommand):
         if not Processor.objects.first():
             if settings.PDJ_PAYPAL_CLIENT_ID and settings.PDJ_PAYPAL_CLIENT_SECRET:
                 Processor.objects.create(
-                    processor_type=Processor.PAYPAL,
+                    type=Processor.PAYPAL,
                     client_id=settings.PDJ_PAYPAL_CLIENT_ID,
                     secret=settings.PDJ_PAYPAL_CLIENT_SECRET,
                     endpoint_secret=settings.PDJ_PAYPAL_ENDPOINT_SECRET,

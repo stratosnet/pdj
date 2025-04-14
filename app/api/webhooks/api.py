@@ -88,7 +88,8 @@ def webhook_paypal(
                 external_id = webhook_event["resource"]["billing_agreement_id"]
                 amount = Decimal(webhook_event["resource"]["amount"]["total"])
                 currency = webhook_event["resource"]["amount"]["currency"]
-                on_payment_completed(external_id, amount, currency)
+                start_at = parse_datetime(webhook_event["resource"]["create_time"])
+                on_payment_completed(external_id, amount, currency, start_at)
             case "BILLING.SUBSCRIPTION.ACTIVATED":
                 external_id = webhook_event["resource"]["id"]
                 plan_id = webhook_event["resource"]["plan_id"]
@@ -102,6 +103,14 @@ def webhook_paypal(
                 on_subscription_create(
                     plan_id, external_id, amount, currency, start_at, end_at
                 )
+            case "BILLING.SUBSCRIPTION.UPDATED":
+                external_id = webhook_event["resource"]["id"]
+                plan_id = webhook_event["resource"]["plan_id"]
+                start_at = parse_datetime(webhook_event["resource"]["start_time"])
+                end_at = parse_datetime(
+                    webhook_event["resource"]["billing_info"]["next_billing_time"]
+                )
+                on_subscription_update(plan_id, external_id, start_at, end_at)
             case _:
                 logger.warning(
                     f"Not supported event type: {webhook_event['event_type']}"
@@ -118,7 +127,9 @@ def webhook_paypal(
 
 
 @transaction.atomic
-def on_payment_completed(external_id: str, amount: Decimal, currency: str):
+def on_payment_completed(
+    external_id: str, amount: Decimal, currency: str, start_at: datetime
+):
     last_payment = (
         Payment.objects.select_related("user", "processor", "subscription__plan")
         .filter(external_id=external_id)
@@ -136,9 +147,9 @@ def on_payment_completed(external_id: str, amount: Decimal, currency: str):
         status=Payment.SUCCESS,
     )
 
-    now = timezone.now()
-
-    sub = Subscription.objects.get_active_last(
+    sub = Subscription.objects.select_relative(
+        "next_billing_plan", "plan"
+    ).get_active_last(
         plan_id=last_payment.subscription.plan.pk, user_id=payment.user.pk
     )
     if not sub:
@@ -146,17 +157,22 @@ def on_payment_completed(external_id: str, amount: Decimal, currency: str):
             "Subscription does not exist to perform recurring payment"
         )
 
-    sub.end_at = now
-    sub.save(update_fields=["end_at"])
+    # if plan was changed for future recurring, we should apply it here
+    next_billing_plan = sub.next_billing_plan if sub.next_billing_plan_id else sub.plan
+
+    sub.end_at = start_at
+    sub.next_billing_at = None
+    sub.next_billing_plan = None
+    sub.save(update_fields=["end_at", "next_billing_at", "next_billing_plan"])
 
     sub = Subscription.objects.create(
         user=payment.user,
-        plan=sub.plan,
+        plan=next_billing_plan,
         payment=payment,
-        start_at=now,  # TODO: Maybe to get from create time?
+        start_at=start_at,
     )
-    sub.update_end_date()
-    sub.save(update_fields=["end_at"])
+    sub.next_billing_at = sub.get_next_end_date()
+    sub.save(update_fields=["next_billing_at"])
 
 
 @transaction.atomic
@@ -197,3 +213,32 @@ def on_subscription_create(
         start_at=start_at,
         next_billing_at=end_at,
     )
+
+
+@transaction.atomic
+def on_subscription_update(
+    plan_id: str,
+    external_id: str,
+    start_at: datetime,
+    end_at: datetime | None,
+):
+    last_payment = (
+        Payment.objects.select_related("user", "processor", "subscription__plan")
+        .filter(external_id=external_id)
+        .first()
+    )
+    if not last_payment or not last_payment.subscription:
+        raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
+
+    sub = Subscription.objects.get_active_last(
+        plan_id=last_payment.subscription.plan.pk, user_id=last_payment.user.pk
+    )
+    if not sub:
+        raise SubscriptionNotFound(
+            "Subscription does not exist to perform subscription payment update"
+        )
+
+    if sub.plan.pk != plan_id:
+        new_plan = Plan.objects.filter(links__external_id=plan_id).first()
+        sub.next_billing_plan = new_plan
+        sub.save(update_fields=["next_billing_plan"])

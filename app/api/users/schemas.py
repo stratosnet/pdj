@@ -1,3 +1,4 @@
+import uuid
 from ninja import Schema, ModelSchema
 
 from accounts.models import User
@@ -5,7 +6,7 @@ from payments.models import Subscription
 
 
 class SubscriptionSchema(ModelSchema):
-    plan_id: int
+    plan_id: uuid.UUID
     is_active: bool
 
     class Meta:
@@ -14,11 +15,14 @@ class SubscriptionSchema(ModelSchema):
             "id",
             "start_at",
             "end_at",
+            "next_billing_at",
+            "next_billing_plan",
             "created_at",
         ]
 
 
 class MeSchema(ModelSchema):
+    sub: uuid.UUID | None
     subscriptions: list[SubscriptionSchema] = []
 
     class Meta:
@@ -29,8 +33,8 @@ class MeSchema(ModelSchema):
 
 
 class CheckoutSchema(Schema):
-    plan_id: int
-    payment_method_id: int
+    plan_id: uuid.UUID
+    payment_method_id: uuid.UUID
 
 
 class SubscriptionCancelSchema(Schema):
@@ -38,7 +42,7 @@ class SubscriptionCancelSchema(Schema):
 
 
 class SubscriptionSwitchSchema(Schema):
-    to_plan_id: int
+    to_plan_id: uuid.UUID
 
 
 class LinkSchema(Schema):

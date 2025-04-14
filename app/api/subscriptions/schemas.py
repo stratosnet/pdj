@@ -1,3 +1,4 @@
+import uuid
 from ninja import Schema, ModelSchema, FilterSchema, Field
 
 from ..plans.schemas import PlanSchema
@@ -6,6 +7,8 @@ from payments.models import Subscription
 
 
 class UserSchema(ModelSchema):
+    sub: uuid.UUID | None
+
     class Meta:
         model = User
         fields = [
@@ -14,8 +17,8 @@ class UserSchema(ModelSchema):
 
 
 class SubscriptionFilterSchema(FilterSchema):
-    ids: list[str] | None = Field(None, q="id__in")
-    user_id: list[str] | None = Field(None, q="user_id")
+    ids: list[uuid.UUID] | None = Field(None, q="id__in")
+    user_id: list[uuid.UUID] | None = Field(None, q="user_id")
     is_recurring: bool | None = Field(None, q="plan__is_recurring")
 
 

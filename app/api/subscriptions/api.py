@@ -3,6 +3,7 @@ import logging
 from django.http import HttpRequest
 from django.conf import settings
 from django.db.models import Q
+from django.db.models import Prefetch
 
 from ninja import Router, Header, Query
 from ninja.pagination import paginate
@@ -42,4 +43,9 @@ def subscriptions_list(
 ):
     q = Q(plan__client=request.client, plan__is_enabled=True)
     q &= filters.get_filter_expression()
-    return Subscription.objects.filter(q)
+    qs = (
+        Subscription.objects.select_related("user", "plan")
+        .prefetch_related("user__sso_identities")
+        .filter(q)
+    )
+    return qs

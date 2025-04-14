@@ -4,7 +4,7 @@ import json
 
 from django.http import HttpRequest
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 
 from ninja import Router, Header, Query
 from ninja.pagination import paginate
@@ -21,6 +21,7 @@ from .schemas import (
 
 from payments.models import (
     Plan,
+    PlanProcessorLink,
 )
 
 
@@ -42,4 +43,12 @@ def plans_list(
 ):
     q = Q(client=request.client, is_enabled=True)
     q &= filters.get_filter_expression()
-    return Plan.objects.filter(q)
+    qs = Plan.objects.prefetch_related(
+        Prefetch(
+            "links",
+            queryset=PlanProcessorLink.objects.select_related("processor").filter(
+                processor__is_enabled=True
+            ),
+        )
+    ).filter(q)
+    return qs

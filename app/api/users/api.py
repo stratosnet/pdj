@@ -42,9 +42,9 @@ router = Router(
 )
 def me(request: HttpRequest):
     print("request.auth", request.auth)
-    subscriptions = Subscription.objects.select_related("plan").get_user_subscriptions(
-        request.auth.pk
-    )
+    subscriptions = Subscription.objects.select_related(
+        "plan", "next_billing_plan"
+    ).get_user_subscriptions(request.auth.pk)
     request.auth.subscriptions.set(subscriptions)
     return request.auth
 
@@ -64,6 +64,10 @@ def checkout(
         plan = Plan.objects.get(id=data.plan_id, is_enabled=True)
     except Plan.DoesNotExist:
         return 400, {"message": "Plan not found"}
+
+    sub = Subscription.objects.get_active_last(plan_id=plan.pk, user_id=request.auth.pk)
+    if sub and not sub.end_at:
+        return 400, {"message": "Has active recurring subscription"}
 
     try:
         pr = plan.links.select_related("processor").get(
@@ -85,6 +89,7 @@ def checkout(
 
     tracking_id = uuid.uuid4().hex
 
+    # TODO: Add lock and check if subscription exist to reuse link?
     payload = provider.generate_subscription_data(
         pr.external_id,
         tracking_id,
@@ -108,7 +113,7 @@ def checkout(
     return {"url": payload["url"]}
 
 
-@router.post(
+@router.delete(
     "/subscriptions/{id}",
     response={204: None, 400: ErrorSchema},
 )
@@ -144,7 +149,8 @@ def subscriptions_cancel(
 
     sub.end_at = sub.next_billing_at
     sub.next_billing_at = None
-    sub.save(update_fields=["end_at", "next_billing_at"])
+    sub.next_billing_plan = None
+    sub.save(update_fields=["end_at", "next_billing_at", "next_billing_plan"])
 
     return 204, None
 
@@ -160,7 +166,7 @@ def subscriptions_switch(
 ):
     try:
         sub = Subscription.objects.select_related(
-            "plan", "payment", "payment__processor"
+            "plan", "payment", "payment__processor", "next_billing_plan"
         ).get(id=id, user_id=request.auth.pk)
     except Subscription.DoesNotExist:
         return 400, {"message": "Subscription not found"}
@@ -179,7 +185,11 @@ def subscriptions_switch(
     except Plan.DoesNotExist:
         return 400, {"message": "Plan not found"}
 
-    if plan.id == sub.plan.id:
+    if (
+        plan.id == sub.plan.id
+        or sub.next_billing_plan
+        and plan.id == sub.next_billing_plan.id
+    ):
         return 400, {"message": "Switch could be only on a different plan"}
 
     # NOTE: If another provider will be added, we should add more logic here to create a correct switch

@@ -58,7 +58,7 @@ INSTALLED_APPS = [
 ]
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
-SILENCED_SYSTEM_CHECKS = ["security.W019"]
+SILENCED_SYSTEM_CHECKS = ["security.W019", "fields.W342"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -264,9 +264,14 @@ CELERY_TASK_ACKS_LATE = False
 CELERY_IGNORE_RESULT = True
 
 CELERY_BEAT_SCHEDULE = {
-    "poll-thegraph-enter": {
+    "paypal-sync-plans": {
         "task": "payments.tasks.paypal_sync_plans",
         "schedule": 30,
+        "args": tuple(),
+    },
+    "paypal-sync-products": {
+        "task": "payments.tasks.paypal_sync_products",
+        "schedule": 60,
         "args": tuple(),
     },
 }
