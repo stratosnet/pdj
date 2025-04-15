@@ -18,7 +18,7 @@ Including another URLconf
 import logging
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.utils.translation import gettext_lazy as _
@@ -28,10 +28,6 @@ from api import api as ninja_api
 logger = logging.getLogger(__name__)
 
 urlpatterns = []
-
-urlpatterns += [
-    path("api/", ninja_api.urls),
-]
 
 if settings.DEBUG_TOOLBAR_ENABLED:
     try:
@@ -43,11 +39,10 @@ if settings.DEBUG_TOOLBAR_ENABLED:
 
 urlpatterns += [
     path("admin/", admin.site.urls),
+    path("tinymce/", include("tinymce.urls")),
+    path("api/", ninja_api.urls),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-# django admin title replacement
-admin.site.site_header = _("Payment service")

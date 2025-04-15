@@ -98,14 +98,17 @@ class Client(models.Model):
     def product_id(self):
         return f"{self.sku_prefix}-{self.pk}"
 
+    @cached_property
+    def context(self):
+        return {
+            "name": self.name,
+        }
+
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
     def _create_user(self, email, password, **extra_fields):
-        """
-        Create and save a user with the given username, email, and password.
-        """
         if not email:
             raise ValueError("The given email must be set")
         email = self.normalize_email(email)
@@ -152,6 +155,12 @@ class User(AbstractUser):
         sso = self.sso_identities.first()
         if sso:
             return str(sso.sub)
+
+    @cached_property
+    def context(self):
+        return {
+            "email": self.email,
+        }
 
 
 class SSOIdentity(models.Model):

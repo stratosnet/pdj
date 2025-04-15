@@ -52,9 +52,11 @@ INSTALLED_APPS = [
     "admin_interface",
     "colorfield",
     "django.contrib.admin",
+    "tinymce",
     # local
     "accounts",
     "payments",
+    "customizations",
 ]
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
@@ -245,17 +247,36 @@ DEFAULT_CURRENCY = env("DEFAULT_CURRENCY", default="USD")
 NINJA_PAGINATION_PER_PAGE = 10
 NINJA_PAGINATION_MAX_LIMIT = 20
 
+# email config
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="webmaster@pdj.com")
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env.int("EMAIL_PORT", default=25)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
+
 # pdj
 PDJ_TITLE_NAME = env("PDJ_TITLE_NAME", default="PDJ")
 PDJ_MAIN_USER_EMAIL = env("PDJ_MAIN_USER_EMAIL")
 PDJ_MAIN_USER_PASSWORD = env("PDJ_MAIN_USER_PASSWORD")
 PDJ_CLIENT_ID = env("PDJ_CLIENT_ID")
 PDJ_CLIENT_SECRET = env("PDJ_CLIENT_SECRET")
-PDJ_PAY_DOMAIN = env("PDJ_PAY_DOMAIN")
+PDJ_DOMAIN = env("PDJ_DOMAIN")
 PDJ_PAYPAL_CLIENT_ID = env("PDJ_PAYPAL_CLIENT_ID")
 PDJ_PAYPAL_CLIENT_SECRET = env("PDJ_PAYPAL_CLIENT_SECRET")
 PDJ_PAYPAL_ENDPOINT_SECRET = env("PDJ_PAYPAL_ENDPOINT_SECRET")
 PDJ_PAYPAL_IS_SANDBOX = env.bool("PDJ_PAYPAL_IS_SANDBOX")
+
+PDJ_INITIALIZERS = [
+    "accounts.initializers.UserInitializer",
+    "accounts.initializers.ClientInitializer",
+    "payments.initializers.ProcessorInitializer",
+    "customizations.initializers.EmailTemplateInitializer",
+    "customizations.initializers.ThemeInitializer",
+]
 
 # celery
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/1")
@@ -282,6 +303,56 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "TIMEOUT": 60 * 5,
     },
+}
+
+# tinymce
+TINYMCE_JS_URL = "tinymce/tinymce.min.js"
+TINYMCE_SPELLCHECKER = False
+TINYMCE_COMPRESSOR = False
+TINYMCE_DEFAULT_CONFIG = {
+    "mode": "textarea",
+    "theme": "silver",
+    "height": 500,
+    "menubar": True,
+    "protect": [
+        "/\<\/?(if|endif|else)\>/g",
+        "/{%[\s\S]*?%}/g",
+        "/{{[\s\S]*?}}/g",
+    ],
+    "valid_children": [
+        "+body[style]",
+        "-body[div]",
+        "p[strong|a|#text]",
+        "+p[span]",
+        "p[code|pre|span]",
+        "div[span|p|#text]",
+        "section[header|footer|article|p]",
+    ],
+    "custom_elements": "dj-extends,dj-block",
+    "extended_valid_elements": "dj-extends,dj-block",
+    "setup": """function (editor) {
+        editor.on('BeforeSetContent', function (e) {
+            e.content = e.content.replace(/{%\s*extends\s*"([^"]+)"\s*%}/g, '<dj-extends data-template="$1"></dj-extends>')
+                .replace(/{%\s*block\s*(\w+)\s*%}/g, '<dj-block data-block="$1">')
+                .replace(/{%\s*endblock\s*%}/g, '</dj-block>');
+        });
+        editor.on('GetContent', function (e) {
+            e.content = e.content.replace(/<dj-extends data-template="([^"]+)"><\/dj-extends>/g, '{% extends "$1" %}')
+                .replace(/<dj-block data-block="(\w+)">/g, '{% block $1 %}')
+                .replace(/<\/dj-block>/g, '{% endblock %}');
+        });
+    }""",
+    "newline_behavior": "linebreak",
+    "forced_root_block": "",
+    "force_br_newlines": False,
+    "force_p_newlines": False,
+    "plugins": "advlist,autolink,lists,link,image,charmap,preview,anchor,"
+    "searchreplace,visualblocks,code,fullscreen,insertdatetime,media,table,"
+    "code,help,wordcount",
+    "toolbar": "undo redo | formatselect | "
+    "bold italic backcolor | alignleft aligncenter "
+    "alignright alignjustify | bullist numlist outdent indent | "
+    "removeformat | code | help",
 }
 
 # django toolbar

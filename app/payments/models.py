@@ -14,8 +14,7 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 
-from core.utils import mask_secret, generate_base_secret
-from core.middleware import get_current_request
+from core.utils import mask_secret, generate_base_secret, build_full_path
 
 from .clients.base import PaymentClient
 from .clients.paypal import PayPalClient
@@ -154,6 +153,16 @@ class Plan(models.Model):
         """Helper for schemas to get directly all processor as payment method"""
         for link in self.links.all():
             yield link.processor
+
+    @cached_property
+    def context(self):
+        return {
+            "name": self.name,
+            "client": self.client.context,
+            "period": self.get_period_display(),
+            "term": self.term,
+            "price": f"{self.price:.2f}",
+        }
 
 
 class SubscriptionQuerySet(models.QuerySet):
@@ -395,11 +404,7 @@ class Processor(models.Model):
     )
     def webhook_url(self):
         path = reverse("api-1.0.0:webhook_paypal", args=(self.webhook_secret,))
-        if settings.PDJ_PAY_DOMAIN:
-            return urljoin(settings.PDJ_PAY_DOMAIN, path)
-
-        request = get_current_request()
-        return request.build_absolute_uri(path)
+        return build_full_path(path)
 
     @property
     @admin.display(
