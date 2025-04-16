@@ -2,12 +2,7 @@ import importlib
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.contrib.auth import get_user_model
 from django.conf import settings
-
-from accounts.models import Client
-from payments.models import Processor
-from core.utils import generate_sku_prefix, generate_base_secret
 
 
 class Command(BaseCommand):

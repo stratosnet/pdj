@@ -1,15 +1,17 @@
+import jinja2
+
 from django.contrib import admin
 from django.contrib.admin.templatetags.admin_urls import add_preserved_filters
 from django.utils.translation import gettext_lazy as _
 from django.http import HttpResponseRedirect
+from django.contrib.messages import constants as messages
 
 from admin_interface.models import Theme as AITheme
 from admin_interface.admin import ThemeAdmin as AIThemeAdmin
 
-from .models import Theme, EmailTemplate
 
-from accounts.models import Client
-from payments.models import Plan
+from .models import Theme, EmailTemplate
+from .context import get_test_context
 
 
 admin.site.unregister(AITheme)
@@ -42,25 +44,6 @@ class EmailTemplateAdmin(admin.ModelAdmin):
 
     def response_change(self, request, obj):
         if "_testsend" in request.POST:
-            # fake data
-            theme = Theme.objects.get_active()
-            client = Client(name="Test client")
-            plan = Plan(
-                client=client, name="Test plan", period=Plan.MONTH, term=1, price=10
-            )
-
-            context = {
-                "user": request.user.context,
-                "theme": theme.context,
-                "client": client.context,
-                "plan": plan.context,
-            }
-
-            obj.send(request.user.email, context)
-
-            self.message_user(
-                request, _(f"Test email has been sent to '{request.user.email}'")
-            )
             opts = self.opts
             preserved_filters = self.get_preserved_filters(request)
             preserved_qsl = self._get_preserved_qsl(request, preserved_filters)
@@ -73,5 +56,20 @@ class EmailTemplateAdmin(admin.ModelAdmin):
                 },
                 redirect_url,
             )
+
+            try:
+                obj.validate_template(get_test_context(request))
+            except jinja2.exceptions.TemplateSyntaxError as e:
+                self.message_user(
+                    request, _(f"Error in template, details: {e}"), messages.ERROR
+                )
+                return HttpResponseRedirect(redirect_url)
+
+            obj.send(request.user.email, get_test_context(request))
+
+            self.message_user(
+                request, _(f"Test email has been sent to '{request.user.email}'")
+            )
+
             return HttpResponseRedirect(redirect_url)
         return super().response_change(request, obj)

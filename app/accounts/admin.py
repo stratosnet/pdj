@@ -74,8 +74,9 @@ class ClientAdmin(admin.ModelAdmin):
         "sku_prefix",
         "client_id",
         "client_secret",
-        "image_url",
         "home_url",
+        "return_url",
+        "cancel_url",
         "is_enabled",
         "created_at",
     ]

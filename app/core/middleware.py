@@ -1,6 +1,8 @@
 import threading
 import logging
 
+from django.http.request import HttpRequest
+
 
 _local_storage = threading.local()
 logger = logging.getLogger(__name__)
@@ -17,5 +19,5 @@ class CurrentRequestMiddleware:
         return response
 
 
-def get_current_request():
+def get_current_request() -> HttpRequest | None:
     return getattr(_local_storage, "request", None)

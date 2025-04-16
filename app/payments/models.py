@@ -1,6 +1,5 @@
 import uuid
 from datetime import timedelta
-from urllib.parse import urljoin
 
 from django.core.validators import RegexValidator
 from django.db import models
@@ -9,7 +8,6 @@ from django.utils import timezone
 from django.conf import settings
 from django.contrib import admin
 from django.urls import reverse
-from django.utils.text import slugify
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
@@ -159,13 +157,15 @@ class Plan(models.Model):
         return {
             "name": self.name,
             "client": self.client.context,
-            "period": self.get_period_display(),
+            "period": self.get_period_display().lower().capitalize(),
             "term": self.term,
             "price": f"{self.price:.2f}",
+            "is_recurring": self.is_recurring,
         }
 
 
 class SubscriptionQuerySet(models.QuerySet):
+
     def get_user_subscriptions(self, user_id: int):
         now = timezone.now()
         return self.filter(
@@ -272,6 +272,14 @@ class Subscription(models.Model):
             case self.plan.YEAR:
                 return self.start_at + timedelta(days=365 * self.plan.term)
 
+    @cached_property
+    def context(self):
+        return {
+            "start_at": self.start_at,
+            "end_at": self.end_at,
+            "next_billing_at": self.next_billing_at,
+        }
+
 
 class Payment(models.Model):
 
@@ -325,6 +333,15 @@ class Payment(models.Model):
     @property
     def expired_at(self):
         return self.created_at + timedelta(days=3)
+
+    @cached_property
+    def context(self):
+        return {
+            "amount": self.amount,
+            "currency": self.currency,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
 
 class Processor(models.Model):
@@ -436,3 +453,9 @@ class Processor(models.Model):
             )
 
         raise NotImplementedError("provider not set")
+
+    @cached_property
+    def context(self):
+        return {
+            "type": self.get_type_display(),
+        }

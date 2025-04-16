@@ -1,0 +1,24 @@
+{% extends "base" %}
+
+{% block preheader %}
+Your subscription to {{ plan.name }} will renew soon
+{% endblock %}
+
+{% block main %}
+<p>Hello, {{ user.first_name|default("Customer") }},</p>
+
+<p>This is a reminder that your subscription will <strong>automatically renew</strong> soon. The following product will be charged:</p>
+
+<div style="margin: 20px 0;">
+  {% if client.home_url %}
+    <p style="margin: 5px 0;"><strong>Website:</strong> <a style="color: {{ theme.css_generic_link_color }}; text-decoration: underline;" href="{{ client.home_url }}">{{ client.home_url }}</a></p>
+  {% endif %}
+  <p style="margin: 5px 0;"><strong>Member ID:</strong> {{ user.id }}</p>
+  <p style="margin: 5px 0;"><strong>Next charge:</strong> {{ payment.amount|price_format(payment.currency) }} on {{ subscription.next_billing_at|strftime('%Y-%m-%d %I:%M%p') }}</p>
+  <p style="margin: 5px 0;"><strong>Subscription:</strong> {{ plan.name }} ({{ plan.term }} {{ plan.period }})</p>
+</div>
+
+<p>If you wish to cancel or manage your subscription, please visit your account settings before the renewal date.</p>
+
+<p>Thank you for being a valued customer.</p>
+{% endblock %}

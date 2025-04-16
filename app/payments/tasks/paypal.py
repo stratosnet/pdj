@@ -8,8 +8,8 @@ from requests.exceptions import RequestException
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
-from .models import Plan, Processor, PlanProcessorLink
-from .clients.paypal import PayPalClient
+from ..models import Plan, Processor, PlanProcessorLink
+from ..clients.paypal import PayPalClient
 
 
 logger = get_task_logger(__name__)
@@ -69,7 +69,7 @@ def fetch_all_subscription_plans(paypal_client: PayPalClient, product_id: str):
 
 
 @shared_task()
-def paypal_sync_products():
+def sync_products():
     from accounts.models import Client
 
     clients = Client.objects.filter(is_enabled=True)
@@ -95,7 +95,7 @@ def paypal_sync_products():
 
 
 @shared_task()
-def paypal_sync_plans():
+def sync_plans():
     plans = Plan.objects.select_related("client").filter(
         is_recurring=True, client__is_enabled=True
     )

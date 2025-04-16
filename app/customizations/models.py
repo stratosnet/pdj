@@ -1,9 +1,9 @@
 from typing import Any
+import uuid
+
 import orjson
-from jinja2 import Environment, DictLoader, select_autoescape
 
 from django.db import models
-from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils.functional import cached_property
 
@@ -11,6 +11,7 @@ from admin_interface.models import Theme as AITheme
 from tinymce.models import HTMLField
 
 from core.utils import build_full_path
+from core.jinja2 import get_jinja2_env
 from .tasks import send_template
 
 
@@ -61,15 +62,27 @@ class EmailTemplateQuerySet(models.QuerySet):
 
 
 class EmailTemplate(models.Model):
-    BASE = 1
-    SUBSCRIBED = 2
+    BASE = "base"
+    SUBSCRIPTION_ACTIVATED = "subscription_activated"  # not implemented
+    SUBSCRIPTION_RENEWAL = "subscription_renewal"  # not implemented
+    SUBSCRIPTION_CANCELED = "subscription_canceled"
+    SUBSCRIPTION_EXPIRED = "subscription_expired"  # not implemented
+    SUBSCRIPTION_UPDATED = "subscription_updated"  # not implemented
+    PAYMENT_SUCCESS = "payment_success"
+    PAYMENT_FAILED = "payment_failed"  # not implemented
+    TRIAL_ENDING = "trial_ending"  # not implemented
+    REFUNDED = "refunded"  # not implemented
 
     TYPES = (
-        (BASE, "base"),
-        (SUBSCRIBED, "subscribed"),
+        (BASE, BASE),
+        (PAYMENT_SUCCESS, PAYMENT_SUCCESS),
+        (SUBSCRIPTION_CANCELED, SUBSCRIPTION_CANCELED),
+        (SUBSCRIPTION_RENEWAL, SUBSCRIPTION_RENEWAL),
     )
 
-    type = models.PositiveIntegerField(
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    type = models.CharField(
+        max_length=64,
         choices=TYPES,
         verbose_name=_("type"),
     )
@@ -85,7 +98,7 @@ class EmailTemplate(models.Model):
     class Meta:
         verbose_name = _("email template")
         verbose_name_plural = _("email templates")
-        ordering = ["created_at"]
+        ordering = ["type"]
 
     def __str__(self):
         return f"{self.get_type_display()}: {self.subject}"
@@ -97,8 +110,12 @@ class EmailTemplate(models.Model):
 
         send_template.apply_async(args=(self.type, to, context_str))
 
+    def validate_template(self, context: dict[str, Any] | None = None):
+        self.render_subject(context)
+        self.render_content(context)
+
     def render_subject(self, context: dict[str, Any]):
-        return Environment().from_string(self.subject).render(context)
+        return get_jinja2_env().from_string(self.subject).render(context)
 
     def render_content(self, context: dict[str, Any]):
         types = dict(self.TYPES)
@@ -108,9 +125,6 @@ class EmailTemplate(models.Model):
             if base_template:
                 templates[types[base_template.type]] = base_template.content
 
-        env = Environment(
-            loader=DictLoader(templates),
-            autoescape=select_autoescape(["html", "xml"]),
-        )
+        env = get_jinja2_env(templates)
         template = env.get_template(types[self.type])
         return template.render(**context)

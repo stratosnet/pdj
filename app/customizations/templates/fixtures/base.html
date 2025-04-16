@@ -19,7 +19,7 @@
             <tr>
               <td style="background-color: {{ theme.css_header_background_color }}; padding: 20px; text-align: center;">
                 {% block header %}
-                <img style="max-height: 50px; margin-bottom: 10px;" src="{{ theme.logo_url }}" alt="PDJ Logo">
+                <img style="max-height: 50px; margin-bottom: 10px;" src="{{ theme.logo_url }}" alt="{{ theme.name }} Logo">
                 <h1 style="color: {{ theme.title_color }}; font-size: 24px; margin: 0;">{{ theme.title }}</h1>
                 {% endblock %}
               </td>
@@ -37,12 +37,13 @@
             <tr>
               <td style="padding: 20px; text-align: center; font-size: 12px; color: #777;">
                 {% block footer %}
-                <p style="margin: 0;">You received this email because you are registered with PDJ.</p>
+                <p style="margin: 0;">You received this email because you are registered with {{ theme.name }}.</p>
                 <p style="margin: 5px 0;">
-                  <a style="color: {{ theme.css_generic_link_color }}; text-decoration: underline;" href="{{ unsubscribe_url }}">
+                  <a style="color: {{ theme.css_generic_link_color }}; text-decoration: underline;" href="{{ user.unsubscribe_url }}">
                     Unsubscribe
                   </a>
                 </p>
+                <p style="margin-top: 10px; color: #999;">© {{ now|strftime('%Y')  }} {{ theme.name }}. All rights reserved.</p>
                 {% endblock %}
               </td>
             </tr>

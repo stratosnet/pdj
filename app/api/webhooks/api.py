@@ -18,6 +18,8 @@ from payments.models import (
     Payment,
 )
 from payments.clients import PayPalClient
+from customizations.models import EmailTemplate, Theme
+from customizations.context import get_subscription_context
 from .schemas import (
     PayPalWebhookSchema,
     ErrorSchema,
@@ -185,7 +187,9 @@ def on_subscription_create(
     end_at: datetime | None,
 ):
     payment = (
-        Payment.objects.select_related("user").filter(external_id=external_id).first()
+        Payment.objects.select_related("user", "processor")
+        .filter(external_id=external_id)
+        .first()
     )
     if payment:
         if payment.status != Payment.PENDING:
@@ -200,19 +204,25 @@ def on_subscription_create(
     else:
         raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
 
-    plan = Plan.objects.filter(links__external_id=plan_id).first()
+    plan = (
+        Plan.objects.select_related("client").filter(links__external_id=plan_id).first()
+    )
     sub = Subscription.objects.get_active_last(plan_id=plan.pk, user_id=payment.user.pk)
     if sub:
         sub.end_at = start_at
         sub.save(update_fields=["end_at"])
 
-    Subscription.objects.create(
+    sub = Subscription.objects.create(
         user=payment.user,
         plan=plan,
         payment=payment,
         start_at=start_at,
         next_billing_at=end_at,
     )
+
+    context = get_subscription_context(sub)
+    template = EmailTemplate.objects.get_by_type(EmailTemplate.PAYMENT_SUCCESS)
+    template.send(payment.user.email, context)
 
 
 @transaction.atomic

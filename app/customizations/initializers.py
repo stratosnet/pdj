@@ -14,21 +14,49 @@ class EmailTemplateInitializer:
         if EmailTemplate.objects.get_by_type(EmailTemplate.BASE) is None:
             EmailTemplate.objects.create(
                 type=EmailTemplate.BASE,
-                subject="",
+                subject="_",
                 content=self._load_template("base.html"),
             )
             log_func(
                 f"Template for '{dict(EmailTemplate.TYPES)[EmailTemplate.BASE]}' created"
             )
-        if EmailTemplate.objects.get_by_type(EmailTemplate.SUBSCRIBED) is None:
+        if EmailTemplate.objects.get_by_type(EmailTemplate.PAYMENT_SUCCESS) is None:
             EmailTemplate.objects.create(
-                type=EmailTemplate.SUBSCRIBED,
-                subject="Successfully subscribed to {{ plan.name }}",
-                content=self._load_template("subscribed.html"),
+                type=EmailTemplate.PAYMENT_SUCCESS,
+                subject="Payment for {{ plan.name }} was successfully processed",
+                content=self._load_template(f"{EmailTemplate.PAYMENT_SUCCESS}.html"),
             )
             log_func(
-                f"Template for '{dict(EmailTemplate.TYPES)[EmailTemplate.SUBSCRIBED]}' created"
+                f"Template for '{dict(EmailTemplate.TYPES)[EmailTemplate.PAYMENT_SUCCESS]}' created"
             )
+        if (
+            EmailTemplate.objects.get_by_type(EmailTemplate.SUBSCRIPTION_CANCELED)
+            is None
+        ):
+            EmailTemplate.objects.create(
+                type=EmailTemplate.SUBSCRIPTION_CANCELED,
+                subject="Your subscription to {{ plan.name }} has been successfully cancelled",
+                content=self._load_template(
+                    f"{EmailTemplate.SUBSCRIPTION_CANCELED}.html"
+                ),
+            )
+            log_func(
+                f"Template for '{dict(EmailTemplate.TYPES)[EmailTemplate.SUBSCRIPTION_CANCELED]}' created"
+            )
+        # if (
+        #     EmailTemplate.objects.get_by_type(EmailTemplate.SUBSCRIPTION_RENEWAL)
+        #     is None
+        # ):
+        #     EmailTemplate.objects.create(
+        #         type=EmailTemplate.SUBSCRIPTION_RENEWAL,
+        #         subject="Your subscription to {{ plan.name }} will renew soon",
+        #         content=self._load_template(
+        #             f"{EmailTemplate.SUBSCRIPTION_RENEWAL}.html"
+        #         ),
+        #     )
+        #     log_func(
+        #         f"Template for '{dict(EmailTemplate.TYPES)[EmailTemplate.SUBSCRIPTION_RENEWAL]}' created"
+        #     )
 
     def _load_template(self, name: str) -> str:
         with open(self.templates_dir / name) as file:

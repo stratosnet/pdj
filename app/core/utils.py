@@ -2,9 +2,12 @@ import os
 import random
 import string
 import binascii
+import base64
 from urllib.parse import urljoin
 
 from django.conf import settings
+from django.utils import timezone
+from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 
 from .middleware import get_current_request
 
@@ -31,3 +34,32 @@ def build_full_path(path: str):
     request = get_current_request()
     if request:
         return request.build_absolute_uri(path)
+
+
+def get_default_context():
+    domain = settings.PDJ_DOMAIN
+    if not domain:
+        request = get_current_request()
+        if request:
+            domain = request.build_absolute_uri()
+    return {
+        "now": timezone.now(),
+        "domain": domain,
+    }
+
+
+def make_timestamp_token(value: str):
+    return base64.b64encode(TimestampSigner().sign(value).encode()).decode()
+
+
+def get_value_from_timestamp_token(token):
+    try:
+        token = base64.b64decode(token).decode()
+    except (ValueError, base64.binascii.Error):
+        return "", False
+
+    try:
+        value = TimestampSigner().unsign(token, max_age=60 * 60 * 24 * 2)
+    except (BadSignature, SignatureExpired):
+        return "", False
+    return value, True

@@ -1,13 +1,21 @@
 import uuid
+import base64
 
 from django.conf import settings
 from django.db import models
+from django.urls import reverse
+from django.contrib import admin
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.contrib.auth.hashers import make_password
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
-from core.utils import generate_sku_prefix, generate_base_secret
+from core.utils import (
+    generate_sku_prefix,
+    generate_base_secret,
+    make_timestamp_token,
+    build_full_path,
+)
 
 
 class Client(models.Model):
@@ -15,13 +23,13 @@ class Client(models.Model):
     name = models.CharField(
         max_length=20,
         verbose_name=_("name"),
-        help_text=_("client's full name or company name"),
+        help_text=_("Сlient's full name or company name"),
     )
     description = models.TextField(
         blank=True,
         null=True,
         verbose_name=_("description"),
-        help_text=_("additional information about the client"),
+        help_text=_("Additional information about the client"),
     )
 
     client_id = models.CharField(
@@ -29,7 +37,7 @@ class Client(models.Model):
         max_length=40,
         unique=True,
         editable=False,
-        help_text=_("client ID"),
+        help_text=_("Client ID"),
         default=generate_base_secret,
     )
     client_secret = models.CharField(
@@ -37,7 +45,7 @@ class Client(models.Model):
         max_length=40,
         unique=True,
         editable=False,
-        help_text=_("client secret"),
+        help_text=_("Client secret"),
         default=generate_base_secret,
     )
 
@@ -55,29 +63,34 @@ class Client(models.Model):
             "SKU prefix for the product (will be automatically generated if skipped)"
         ),
     )
+    home_url = models.URLField(
+        verbose_name=_("home URL"),
+        help_text=_("The home URL for the client product."),
+        null=True,
+        blank=True,
+    )
     return_url = models.URLField(
         verbose_name=_("кeturn URL"),
         help_text=_(
-            "the URL of the product page where users are redirected after completing a payment."
+            "The URL of the product page where users are redirected after completing a payment."
         ),
         null=True,
         blank=True,
     )
-
     cancel_url = models.URLField(
-        verbose_name=_("Cancel URL"),
+        verbose_name=_("сancel URL"),
         help_text=_(
-            "the URL of the product page where users are redirected if they cancel the payment. If not provided, the Return URL will be used."
+            "The URL of the product page where users are redirected if they cancel the payment. If not provided, the Return URL will be used."
         ),
         null=True,
         blank=True,
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
-    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
     is_enabled = models.BooleanField(
         default=False,
         verbose_name=_("is enabled"),
-        help_text=_("designates whether this client is active"),
+        help_text=_("Designates whether this client is active"),
     )
 
     class Meta:
@@ -102,6 +115,7 @@ class Client(models.Model):
     def context(self):
         return {
             "name": self.name,
+            "home_url": self.home_url,
         }
 
 
@@ -137,6 +151,10 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(_("email address"), unique=True)
+    is_mailing_subscribed = models.BooleanField(
+        _("is mailing subscribed"), default=True
+    )
+
     username = None
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -150,6 +168,16 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
+    @property
+    @admin.display(
+        description=_("Unsubscribe URL"),
+        boolean=False,
+    )
+    def unsubscribe_url(self):
+        token = make_timestamp_token(str(self.pk))
+        path = reverse("api-1.0.0:mailing_unsubscribe", args=(token,))
+        return build_full_path(path)
+
     @cached_property
     def sub(self):
         sso = self.sso_identities.first()
@@ -159,7 +187,9 @@ class User(AbstractUser):
     @cached_property
     def context(self):
         return {
+            "id": self.pk,
             "email": self.email,
+            "unsubscribe_url": self.unsubscribe_url,
         }
 
 

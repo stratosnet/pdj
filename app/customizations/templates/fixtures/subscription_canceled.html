@@ -1,0 +1,23 @@
+{% extends "base" %}
+
+{% block preheader %}
+Your subscription to {{ plan.name }} has been successfully cancelled
+{% endblock %}
+
+{% block main %}
+<p>Hello, {{ user.first_name|default("Customer") }},</p>
+
+<p>This message confirms that your subscription has been <strong>cancelled</strong>. You will not be charged again for the following product:</p>
+
+<div style="margin: 20px 0;">
+  {% if client.home_url %}
+    <p style="margin: 5px 0;"><strong>Website:</strong> <a style="color: {{ theme.css_generic_link_color }}; text-decoration: underline;" href="{{ client.home_url }}">{{ client.home_url }}</a></p>
+  {% endif %}
+  <p style="margin: 5px 0;"><strong>Member ID:</strong> {{ user.id }}</p>
+  <p style="margin: 5px 0;"><strong>Last charge and date:</strong> {{ payment.amount|price_format(payment.currency) }} on {{ payment.updated_at|strftime('%Y-%m-%d %I:%M%p') }}</p>
+  <p style="margin: 5px 0;"><strong>Subscription:</strong> {{ plan.name }} ({{ plan.term }} {{ plan.period }})</p>
+  <p style="margin: 5px 0;"><strong>Active Until:</strong> {{ (subscription.end_at or subscription.next_billing_at)|strftime('%Y-%m-%d %I:%M%p') }}</p>
+</div>
+
+<p>Thank you for using our online cancellation service. We're sorry to see you go, and we hope to see you again in the future.</p>
+{% endblock %}

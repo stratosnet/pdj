@@ -19,6 +19,4 @@ class ProcessorInitializer:
                     ),
                     is_enabled=True,
                 )
-                self.stdout.write(
-                    self.style.SUCCESS("Default paypal processor initialized")
-                )
+                log_func("Default paypal processor initialized")

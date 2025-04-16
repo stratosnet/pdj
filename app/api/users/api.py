@@ -11,6 +11,8 @@ from ninja import Router, Header
 
 from payments.models import Plan, PlanProcessorLink, Subscription, Payment
 from payments.clients import PaymentClient
+from customizations.models import EmailTemplate
+from customizations.context import get_subscription_context
 
 from ..authenticators import (
     OIDCBearer,
@@ -147,10 +149,16 @@ def subscriptions_cancel(
         data.reason,
     )
 
-    sub.end_at = sub.next_billing_at
-    sub.next_billing_at = None
-    sub.next_billing_plan = None
-    sub.save(update_fields=["end_at", "next_billing_at", "next_billing_plan"])
+    # NOTE: Move to webhook???
+    with transaction.atomic():
+        sub.end_at = sub.next_billing_at
+        sub.next_billing_at = None
+        sub.next_billing_plan = None
+        sub.save(update_fields=["end_at", "next_billing_at", "next_billing_plan"])
+
+        context = get_subscription_context(sub)
+        template = EmailTemplate.objects.get_by_type(EmailTemplate.PAYMENT_SUCCESS)
+        template.send(sub.user.email, context)
 
     return 204, None
 
