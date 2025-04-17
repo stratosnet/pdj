@@ -57,8 +57,8 @@ def get_subscription_context(sub: Subscription):
 
     if sub.payment_id:
         context["payment"] = sub.payment.context
-        if sub.payment.processor_id:
-            context["processor"] = sub.payment.processor.context
+        if sub.payment.invoice_id and sub.payment.invoice.processor_id:
+            context["processor"] = sub.payment.invoice.processor.context
 
     theme = Theme.objects.filter(active=True).first()
     if theme:

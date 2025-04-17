@@ -12,3 +12,7 @@ class PaymentWrongStatus(PaymentException):
 
 class SubscriptionNotFound(PaymentException):
     pass
+
+
+class PlanNotFound(PaymentException):
+    pass

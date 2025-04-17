@@ -26,7 +26,7 @@ from payments.models import (
 
 logger = logging.getLogger(__name__)
 
-router = Router()
+router = Router(tags=["private"])
 
 
 @router.get(

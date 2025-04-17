@@ -20,12 +20,12 @@ def strftime(dt: datetime | str | None, format: str):
     return dt.strftime(format)
 
 
-def price_format(price: Decimal | str, currency: str):
-    if isinstance(price, str):
+def price_format(amount: Decimal | str, currency: str):
+    if isinstance(amount, str):
         try:
-            price = Decimal(price)
+            amount = Decimal(amount)
         except InvalidOperation:
             return
 
     symbol = get_currency_symbol(currency)
-    return f"{symbol}{price}"
+    return f"{symbol}{amount:.2f}"

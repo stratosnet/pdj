@@ -90,6 +90,22 @@ class OriginalPayPalClient:
         url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/cancel"
         self._make_request(url=url, method="POST", json=data, headers=self.headers)
 
+    def suspend_billing_subscription(self, subscription_id: str, reason: str) -> None:
+        data = {
+            "reason": reason,
+        }
+
+        url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/suspend"
+        self._make_request(url=url, method="POST", json=data, headers=self.headers)
+
+    def activate_billing_subscription(self, subscription_id: str, reason: str) -> None:
+        data = {
+            "reason": reason,
+        }
+
+        url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/activate"
+        self._make_request(url=url, method="POST", json=data, headers=self.headers)
+
     def revise_billing_subscription(
         self,
         subscription_id: str,
@@ -251,9 +267,23 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
         data["url"] = self.get_hateoas_url(resp.get("links", []))
         return data
 
-    def cancel_subscription(self, id: str, reason: str):
+    def activate_subscription(self, id: str, reason: str):
         try:
-            self.cancel_billing_subscription(id, reason)
+            self.activate_billing_subscription(id, reason)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                logger.warning(
+                    f"Failed to proceed subscription cancel, details: {e.response.text}"
+                )
+                return
+            raise e
+
+    def deactivate_subscription(self, id: str, reason: str, suspend: bool = True):
+        try:
+            if suspend:
+                self.suspend_billing_subscription(id, reason)
+            else:
+                self.cancel_billing_subscription(id, reason)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 422:
                 logger.warning(

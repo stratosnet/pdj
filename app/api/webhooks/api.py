@@ -1,34 +1,27 @@
 import logging
 import json
 from decimal import Decimal
-from datetime import datetime
 
-from django.db import transaction
-from django.utils import timezone
 from django.http import HttpRequest
-from django.conf import settings
 from django.utils.dateparse import parse_datetime
 
 from ninja import Router
 
 from payments.models import (
     Processor,
-    Subscription,
-    Plan,
-    Payment,
 )
 from payments.clients import PayPalClient
-from customizations.models import EmailTemplate, Theme
-from customizations.context import get_subscription_context
-from .schemas import (
-    PayPalWebhookSchema,
-    ErrorSchema,
-)
-from .exceptions import (
+from payments.exceptions import (
     PaymentException,
-    PaymentNotFound,
-    PaymentWrongStatus,
-    SubscriptionNotFound,
+)
+from payments.signals import (
+    payment_completed,
+    subscription_suspend,
+    subscription_activate,
+    subscription_update,
+)
+from .schemas import (
+    ErrorSchema,
 )
 
 
@@ -86,14 +79,23 @@ def webhook_paypal(
 
     try:
         match webhook_event["event_type"]:
+            # sent on next recurring payment
             case "PAYMENT.SALE.COMPLETED":
                 external_id = webhook_event["resource"]["billing_agreement_id"]
                 amount = Decimal(webhook_event["resource"]["amount"]["total"])
                 currency = webhook_event["resource"]["amount"]["currency"]
                 start_at = parse_datetime(webhook_event["resource"]["create_time"])
-                on_payment_completed(external_id, amount, currency, start_at)
+                payment_completed.send(
+                    sender=None,
+                    external_id=external_id,
+                    amount=amount,
+                    currency=currency,
+                    start_at=start_at,
+                )
+            # send as first event when subscription created and when unsuspended
             case "BILLING.SUBSCRIPTION.ACTIVATED":
-                external_id = webhook_event["resource"]["id"]
+                id = webhook_event["resource"]["id"]
+                custom_id = webhook_event["resource"]["custom_id"]
                 plan_id = webhook_event["resource"]["plan_id"]
                 last_payment = webhook_event["resource"]["billing_info"]["last_payment"]
                 amount = Decimal(last_payment["amount"]["value"])
@@ -102,17 +104,42 @@ def webhook_paypal(
                 end_at = parse_datetime(
                     webhook_event["resource"]["billing_info"]["next_billing_time"]
                 )
-                on_subscription_create(
-                    plan_id, external_id, amount, currency, start_at, end_at
+                subscription_activate.send(
+                    sender=None,
+                    id=id,
+                    plan_id=plan_id,
+                    custom_id=custom_id,
+                    amount=amount,
+                    currency=currency,
+                    start_at=start_at,
+                    end_at=end_at,
                 )
+            # when plan changed
             case "BILLING.SUBSCRIPTION.UPDATED":
-                external_id = webhook_event["resource"]["id"]
+                custom_id = webhook_event["resource"]["custom_id"]
                 plan_id = webhook_event["resource"]["plan_id"]
                 start_at = parse_datetime(webhook_event["resource"]["start_time"])
                 end_at = parse_datetime(
                     webhook_event["resource"]["billing_info"]["next_billing_time"]
                 )
-                on_subscription_update(plan_id, external_id, start_at, end_at)
+                subscription_update.send(
+                    sender=None,
+                    plan_id=plan_id,
+                    custom_id=custom_id,
+                    start_at=start_at,
+                    end_at=end_at,
+                )
+            # when suspended
+            case "BILLING.SUBSCRIPTION.SUSPENDED":
+                custom_id = webhook_event["resource"]["custom_id"]
+                suspended_at = parse_datetime(
+                    webhook_event["resource"]["status_update_time"]
+                )
+                subscription_suspend.send(
+                    sender=None,
+                    custom_id=custom_id,
+                    suspended_at=suspended_at,
+                )
             case _:
                 logger.warning(
                     f"Not supported event type: {webhook_event['event_type']}"
@@ -120,135 +147,9 @@ def webhook_paypal(
                 return 200, {"message": "Event match not supported"}
     except PaymentException as e:
         logger.warning(f"Payment error: {e.args}")
-        return 400, {"message": f"Webhook error: {e.args}"}
+        return 400, {"message": f"Webhook error: {e.args[0]}"}
     except Exception as e:
         logger.exception(e)
         return 500, {"message": "Unhandled error"}
 
     return 204, None
-
-
-@transaction.atomic
-def on_payment_completed(
-    external_id: str, amount: Decimal, currency: str, start_at: datetime
-):
-    last_payment = (
-        Payment.objects.select_related("user", "processor", "subscription__plan")
-        .filter(external_id=external_id)
-        .first()
-    )
-    if not last_payment or not last_payment.subscription:
-        raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
-
-    payment = Payment.objects.create(
-        external_id=external_id,
-        user=last_payment.user,
-        processor=last_payment.processor,
-        amount=amount,
-        currency=currency,
-        status=Payment.SUCCESS,
-    )
-
-    sub = Subscription.objects.select_relative(
-        "next_billing_plan", "plan"
-    ).get_active_last(
-        plan_id=last_payment.subscription.plan.pk, user_id=payment.user.pk
-    )
-    if not sub:
-        raise SubscriptionNotFound(
-            "Subscription does not exist to perform recurring payment"
-        )
-
-    # if plan was changed for future recurring, we should apply it here
-    next_billing_plan = sub.next_billing_plan if sub.next_billing_plan_id else sub.plan
-
-    sub.end_at = start_at
-    sub.next_billing_at = None
-    sub.next_billing_plan = None
-    sub.save(update_fields=["end_at", "next_billing_at", "next_billing_plan"])
-
-    sub = Subscription.objects.create(
-        user=payment.user,
-        plan=next_billing_plan,
-        payment=payment,
-        start_at=start_at,
-    )
-    sub.next_billing_at = sub.get_next_end_date()
-    sub.save(update_fields=["next_billing_at"])
-
-
-@transaction.atomic
-def on_subscription_create(
-    plan_id: str,
-    external_id: str,
-    amount: str,
-    currency: str,
-    start_at: datetime,
-    end_at: datetime | None,
-):
-    payment = (
-        Payment.objects.select_related("user", "processor")
-        .filter(external_id=external_id)
-        .first()
-    )
-    if payment:
-        if payment.status != Payment.PENDING:
-            raise PaymentWrongStatus(
-                f"Payment for external id '{external_id}' has wrong status (got: {payment.status}, should be: {Payment.PENDING})"
-            )
-        else:
-            payment.status = Payment.SUCCESS
-            payment.amount = amount
-            payment.currency = currency
-            payment.save(update_fields=["status", "amount", "currency"])
-    else:
-        raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
-
-    plan = (
-        Plan.objects.select_related("client").filter(links__external_id=plan_id).first()
-    )
-    sub = Subscription.objects.get_active_last(plan_id=plan.pk, user_id=payment.user.pk)
-    if sub:
-        sub.end_at = start_at
-        sub.save(update_fields=["end_at"])
-
-    sub = Subscription.objects.create(
-        user=payment.user,
-        plan=plan,
-        payment=payment,
-        start_at=start_at,
-        next_billing_at=end_at,
-    )
-
-    context = get_subscription_context(sub)
-    template = EmailTemplate.objects.get_by_type(EmailTemplate.PAYMENT_SUCCESS)
-    template.send(payment.user.email, context)
-
-
-@transaction.atomic
-def on_subscription_update(
-    plan_id: str,
-    external_id: str,
-    start_at: datetime,
-    end_at: datetime | None,
-):
-    last_payment = (
-        Payment.objects.select_related("user", "processor", "subscription__plan")
-        .filter(external_id=external_id)
-        .first()
-    )
-    if not last_payment or not last_payment.subscription:
-        raise PaymentNotFound(f"Last payment for external id '{external_id}' not found")
-
-    sub = Subscription.objects.get_active_last(
-        plan_id=last_payment.subscription.plan.pk, user_id=last_payment.user.pk
-    )
-    if not sub:
-        raise SubscriptionNotFound(
-            "Subscription does not exist to perform subscription payment update"
-        )
-
-    if sub.plan.pk != plan_id:
-        new_plan = Plan.objects.filter(links__external_id=plan_id).first()
-        sub.next_billing_plan = new_plan
-        sub.save(update_fields=["next_billing_plan"])

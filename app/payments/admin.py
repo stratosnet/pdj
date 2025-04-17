@@ -3,6 +3,7 @@ from django.urls import reverse
 
 from .models import (
     Plan,
+    # Invoice,
     Payment,
     Subscription,
     PlanProcessorLink,
@@ -14,12 +15,12 @@ from .filters import ClientListFilter
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
     list_display = [
-        "pk",
+        "id",
         "user",
         "plan",
         "client",
         "payment",
-        "is_active",
+        "status",
         "start_at",
         "end_at",
         "next_billing_at",
@@ -30,7 +31,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "user",
         "plan",
         "payment",
-        "is_active",
+        "status",
         "start_at",
         "end_at",
         "next_billing_at",
@@ -38,7 +39,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "created_at",
     ]
     readonly_fields = [
-        "is_active",
+        "status",
         "payment",
         "start_at",
         "created_at",
@@ -53,13 +54,37 @@ class SubscriptionAdmin(admin.ModelAdmin):
         )
 
 
+# @admin.register(Invoice)
+# class InvoiceAdmin(admin.ModelAdmin):
+#     list_display = [
+#         "pk",
+#         "user",
+#         "external_id",
+#         "processor",
+#         "created_at",
+#     ]
+
+#     def get_queryset(self, request):
+#         return super().get_queryset(request).select_related("user", "processor")
+
+#     def has_add_permission(self, request, obj=None):
+#         return False
+
+#     def has_delete_permission(self, request, obj=None):
+#         return False
+
+#     def has_change_permission(self, request, obj=None):
+#         return False
+
+
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = [
-        "pk",
-        "external_id",
+        "id",
         "user",
+        "invoice",
         "processor",
+        "external_id",
         "amount",
         "currency",
         "status",
@@ -67,7 +92,17 @@ class PaymentAdmin(admin.ModelAdmin):
     ]
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("user", "processor")
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("invoice", "invoice__processor", "invoice__user")
+        )
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -76,12 +111,14 @@ class PaymentAdmin(admin.ModelAdmin):
 @admin.register(Processor)
 class ProcessorAdmin(admin.ModelAdmin):
     list_display = [
+        "id",
         "type",
         "hidden_client_id",
         "hidden_secret",
         "created_at",
     ]
     fields = [
+        "id",
         "type",
         "client_id",
         "secret",
@@ -90,7 +127,7 @@ class ProcessorAdmin(admin.ModelAdmin):
         "is_sandbox",
         "is_enabled",
     ]
-    readonly_fields = ["webhook_url"]
+    readonly_fields = ["id", "webhook_url"]
 
 
 @admin.register(Plan)
@@ -114,7 +151,7 @@ class PlanAdmin(admin.ModelAdmin):
 @admin.register(PlanProcessorLink)
 class PlanProcessorLinkAdmin(admin.ModelAdmin):
     list_display = [
-        "pk",
+        "id",
         "plan",
         "processor",
         "external_id",

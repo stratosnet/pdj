@@ -1,5 +1,5 @@
 import uuid
-from ninja import Schema, ModelSchema
+from ninja import Schema, ModelSchema, Field
 
 from accounts.models import User
 from payments.models import Subscription
@@ -7,7 +7,7 @@ from payments.models import Subscription
 
 class SubscriptionSchema(ModelSchema):
     plan_id: uuid.UUID
-    is_active: bool
+    status: str = Field(..., alias="get_status_display")
 
     class Meta:
         model = Subscription
@@ -15,6 +15,7 @@ class SubscriptionSchema(ModelSchema):
             "id",
             "start_at",
             "end_at",
+            "suspended_at",
             "next_billing_at",
             "next_billing_plan",
             "created_at",
@@ -37,11 +38,11 @@ class CheckoutSchema(Schema):
     payment_method_id: uuid.UUID
 
 
-class SubscriptionCancelSchema(Schema):
+class SubscribeSchema(Schema):
     reason: str
 
 
-class SubscriptionSwitchSchema(Schema):
+class ChangePlanSchema(Schema):
     to_plan_id: uuid.UUID
 
 

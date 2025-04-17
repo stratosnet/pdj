@@ -19,6 +19,7 @@ router = Router()
 
 @router.get(
     "/unsubscribe/{token}",
+    include_in_schema=False,
     summary="Mailing unsubscribe",
     response={200: ErrorSchema, 400: ErrorSchema},
 )

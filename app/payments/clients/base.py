@@ -14,7 +14,11 @@ class PaymentClient(ABC):
         pass
 
     @abstractmethod
-    def cancel_subscription(self, id: str, reason: str):
+    def activate_subscription(self, id: str, reason: str):
+        pass
+
+    @abstractmethod
+    def deactivate_subscription(self, id: str, reason: str, suspend: bool = True):
         pass
 
     @abstractmethod

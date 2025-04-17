@@ -1,4 +1,4 @@
-import orjson
+import json
 
 from django.conf import settings
 from django.utils.translation import gettext as _
@@ -20,7 +20,7 @@ def send_template(type_: int, to: str, context_str: str | None = None):
         logger.warning(f"Template '{type_}' does not exists")
         return
 
-    context = orjson.loads(context_str or "{}")
+    context = json.loads(context_str or "{}")
 
     subject = template.render_subject(context)
     content = template.render_content(context)

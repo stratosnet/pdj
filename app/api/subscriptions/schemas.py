@@ -25,7 +25,7 @@ class SubscriptionFilterSchema(FilterSchema):
 class SubscriptionSchema(ModelSchema):
     user: UserSchema
     plan: PlanSchema
-    is_active: bool
+    status: int
 
     class Meta:
         model = Subscription

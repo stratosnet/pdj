@@ -1,17 +1,19 @@
 from typing import Any
 import uuid
 
-import orjson
+import json
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils.functional import cached_property
+from django.core.serializers.json import DjangoJSONEncoder
 
 from admin_interface.models import Theme as AITheme
 from tinymce.models import HTMLField
 
 from core.utils import build_full_path
 from core.jinja2 import get_jinja2_env
+from accounts.models import User
 from .tasks import send_template
 
 
@@ -103,12 +105,15 @@ class EmailTemplate(models.Model):
     def __str__(self):
         return f"{self.get_type_display()}: {self.subject}"
 
-    def send(self, to: str, context: dict[str, Any] | None = None):
+    def send(self, user: User, context: dict[str, Any] | None = None):
+        if not user.is_mailing_subscribed:
+            return
+
         context_str = None
         if context:
-            context_str = orjson.dumps(context)
+            context_str = json.dumps(context, cls=DjangoJSONEncoder)
 
-        send_template.apply_async(args=(self.type, to, context_str))
+        send_template.apply_async(args=(self.type, user.email, context_str))
 
     def validate_template(self, context: dict[str, Any] | None = None):
         self.render_subject(context)

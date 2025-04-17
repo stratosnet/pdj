@@ -1,5 +1,5 @@
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from django.core.validators import RegexValidator
 from django.db import models
@@ -167,32 +167,37 @@ class Plan(models.Model):
 class SubscriptionQuerySet(models.QuerySet):
 
     def get_user_subscriptions(self, user_id: int):
-        now = timezone.now()
         return self.filter(
             Q(
                 user_id=user_id,
-                start_at__lte=now,
             ),
-            Q(end_at__gte=now) | Q(end_at__isnull=True),
         ).order_by("-created_at")
 
-    def get_active_last(
-        self, user_id: int, *, plan_id: int | None, is_recurring: bool = True
+    def latest_for_user_and_client(
+        self,
+        user_id: int,
+        client_id: int,
     ):
-        now = timezone.now()
-        q = Q(
-            user_id=user_id,
-            plan__is_recurring=is_recurring,
-            start_at__lte=now,
+        return (
+            self.filter(user_id=user_id, plan__client_id=client_id)
+            .order_by("-created_at")
+            .first()
         )
-        if plan_id:
-            q &= Q(plan_id=plan_id)
-
-        q &= Q(end_at__gte=now) | Q(end_at__isnull=True)
-        return self.filter(q).order_by("-created_at").first()
 
 
 class Subscription(models.Model):
+    NULL = 0
+    ACTIVATED = 1
+    SUSPENDED = 2
+    EXPIRED = 3
+
+    STATUSES = (
+        (NULL, "NULL"),
+        (ACTIVATED, "ACTIVATED"),
+        (SUSPENDED, "SUSPENDED"),
+        (EXPIRED, "EXPIRED"),
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -216,6 +221,7 @@ class Subscription(models.Model):
     )
     start_at = models.DateTimeField(_("start at"))
     end_at = models.DateTimeField(_("end at"), null=True, blank=True)
+    suspended_at = models.DateTimeField(_("suspended at"), null=True, blank=True)
     next_billing_at = models.DateTimeField(_("next billing at"), null=True, blank=True)
     next_billing_plan = models.ForeignKey(
         "Plan",
@@ -236,24 +242,77 @@ class Subscription(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"user: {self.user_id} - payment: {self.payment_id}"
+        return f"user: {self.user_id} - invoice: {self.payment_id}"
 
     @property
     @admin.display(
-        description=_("is active"),
-        boolean=True,
+        description=_("status"),
     )
-    def is_active(self):
+    def status(self):
         if not self.start_at:
-            return False
+            return self.NULL
+
+        if self.suspended_at:
+            return self.SUSPENDED
+
         now = timezone.now()
-        return self.start_at < now and (
+
+        if self.start_at < now and (
             (self.end_at and now < self.end_at) or not self.end_at
-        )
+        ):
+            return self.ACTIVATED
+
+        return self.EXPIRED
+
+    def get_status_display(self):
+        return dict(self.STATUSES)[self.status]
+
+    @property
+    @admin.display(description=_("is active"), boolean=True)
+    def is_active(self):
+        return self.status == self.ACTIVATED
+
+    @property
+    @admin.display(description=_("is suspended"), boolean=True)
+    def is_suspended(self):
+        return self.status == self.SUSPENDED
+
+    @property
+    @admin.display(description=_("is expired"), boolean=True)
+    def is_expired(self):
+        return self.status == self.EXPIRED
 
     @cached_property
+    @admin.display(
+        ordering="plan__client",
+        description=_("client"),
+    )
     def client(self):
         return self.plan.client if self.plan else None
+
+    def finish(self, end_at: datetime):
+        self.end_at = end_at
+        self.suspended_at = None
+        self.next_billing_at = None
+        self.next_billing_plan = None
+        self.save(
+            update_fields=[
+                "end_at",
+                "suspended_at",
+                "next_billing_at",
+                "next_billing_plan",
+            ]
+        )
+
+    def suspend(self, suspended_at: datetime):
+        self.suspended_at = suspended_at
+        self.end_at = self.next_billing_at
+        self.save(update_fields=["suspended_at", "end_at"])
+
+    def unsuspend(self):
+        self.suspended_at = None
+        self.end_at = None
+        self.save(update_fields=["suspended_at", "end_at"])
 
     def clean(self):
         if self.end_at and self.end_at <= self.start_at:
@@ -281,35 +340,58 @@ class Subscription(models.Model):
         }
 
 
-class Payment(models.Model):
-
-    PENDING = 1
-    HOLD = 2
-    CANCELED = 3
-    FAILURE = 4
-    SUCCESS = 5
-    EXPIRED = 6
-
-    STATUSES = (
-        (PENDING, _("Pending")),
-        (HOLD, _("Hold")),
-        (CANCELED, _("Canceled")),
-        (FAILURE, _("Failure")),
-        (SUCCESS, _("Success")),
-        (EXPIRED, _("Expired")),
-    )
+class Invoice(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    external_id = models.CharField(_("external_id"), max_length=128)
+    external_id = models.CharField(_("external_id"), max_length=128, unique=True)
+    processor = models.ForeignKey(
+        "Processor",
+        verbose_name=_("processor"),
+        related_name="invoices",
+        on_delete=models.CASCADE,
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name=_("user"),
         related_name="payments",
         on_delete=models.CASCADE,
     )
-    processor = models.ForeignKey(
-        "Processor",
-        verbose_name=_("processor"),
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("invoice")
+        verbose_name_plural = _("invoices")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.id}"
+
+    @staticmethod
+    def generate_tracking_id():
+        return str(uuid.uuid4())
+
+
+class Payment(models.Model):
+
+    PENDING = 1
+    CANCELED = 2
+    SUCCESS = 3
+    FAILURE = 4
+    EXPIRED = 5
+
+    STATUSES = (
+        (PENDING, _("Pending")),
+        (CANCELED, _("Canceled")),
+        (SUCCESS, _("Success")),
+        (FAILURE, _("Failure")),
+        (EXPIRED, _("Expired")),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    invoice = models.ForeignKey(
+        "Invoice",
+        verbose_name=_("invoice"),
         related_name="payments",
         on_delete=models.CASCADE,
     )
@@ -325,10 +407,45 @@ class Payment(models.Model):
         verbose_name = _("payment")
         verbose_name_plural = _("payments")
         ordering = ["-created_at"]
-        unique_together = ("id", "external_id")
 
     def __str__(self):
-        return f"#{self.pk} ({self.get_status_display()})"
+        return f"{self.pk} ({self.get_status_display()})"
+
+    @cached_property
+    def subscription_id(self):
+        return self.subscription.id if self.subscription else None
+
+    @cached_property
+    @admin.display(
+        ordering="invoice__user",
+        description=_("user"),
+    )
+    def user(self):
+        return self.invoice.user if self.invoice_id and self.invoice.user_id else None
+
+    @cached_property
+    @admin.display(
+        ordering="invoice__processor",
+        description=_("processor"),
+    )
+    def processor(self):
+        return (
+            self.invoice.processor
+            if self.invoice_id and self.invoice.processor_id
+            else None
+        )
+
+    @cached_property
+    @admin.display(
+        ordering="invoice__external_id",
+        description=_("external ID"),
+    )
+    def external_id(self):
+        return (
+            self.invoice.external_id
+            if self.invoice_id and self.invoice.external_id
+            else None
+        )
 
     @property
     def expired_at(self):
