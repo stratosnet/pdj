@@ -1,5 +1,6 @@
 import uuid
 from datetime import timedelta, datetime
+from decimal import Decimal
 
 from django.core.validators import RegexValidator
 from django.db import models
@@ -33,7 +34,9 @@ class PlanProcessorLink(models.Model):
         related_name="links",
         help_text=_("the payment processor service"),
     )
-    external_id = models.CharField(_("external_id"), max_length=128, unique=True)
+    external_id = models.CharField(
+        _("external_id"), max_length=128, unique=True, null=True, blank=True
+    )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
 
     class Meta:
@@ -343,7 +346,9 @@ class Subscription(models.Model):
 class Invoice(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    external_id = models.CharField(_("external_id"), max_length=128, unique=True)
+    external_id = models.CharField(
+        _("external_id"), max_length=128, unique=True, null=True
+    )
     processor = models.ForeignKey(
         "Processor",
         verbose_name=_("processor"),
@@ -570,6 +575,73 @@ class Processor(models.Model):
             )
 
         raise NotImplementedError("provider not set")
+
+    def create_checkout_url(
+        self, custom_id: str, amount: Decimal, return_url: str, cancel_url: str
+    ):
+        provider = self.get_provider()
+        payload = provider.generate_checkout_data(
+            custom_id,
+            amount,
+            return_url,
+            cancel_url,
+        )
+        return payload.get("url")
+
+    def create_subscription_url(
+        self, custom_id: str, external_plan_id: str, return_url: str, cancel_url: str
+    ):
+        provider = self.get_provider()
+        payload = provider.generate_subscription_data(
+            custom_id,
+            external_plan_id,
+            return_url,
+            cancel_url,
+        )
+        return payload.get("url")
+
+    def create_change_plan_url(
+        self,
+        external_subscription_id: str,
+        external_plan_id: str,
+        return_url: str,
+        cancel_url: str,
+    ):
+        provider = self.get_provider()
+        payload = provider.generate_change_subscription_data(
+            external_subscription_id,
+            external_plan_id,
+            return_url,
+            cancel_url,
+        )
+        return payload.get("url")
+
+    def activate_subscription(
+        self,
+        external_invoice_id: str,
+        reason: str,
+    ):
+        provider = self.get_provider()
+        provider.activate_subscription(
+            external_invoice_id,
+            reason,
+        )
+
+    def deactivate_subscription(
+        self,
+        external_invoice_id: str,
+        reason: str,
+    ):
+        provider = self.get_provider()
+        provider.deactivate_subscription(
+            external_invoice_id,
+            reason,
+            suspend=True,  # TODO: Add flag to processor model
+        )
+
+    def approve_order(self, external_order_id: str):
+        provider = self.get_provider()
+        provider.approve_order(external_order_id)
 
     @cached_property
     def context(self):

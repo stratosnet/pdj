@@ -239,12 +239,78 @@ class OriginalPayPalClient:
             url=url, method="POST", json=data, headers=self.headers
         ).json()
 
+    def create_order(
+        self,
+        custom_id: str,
+        amount: str,
+        currency: str = "USD",
+        *,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
+    ) -> dict[str, Any]:
+        data = {
+            "intent": "CAPTURE",
+            "payment_source": {
+                "paypal": {
+                    "experience_context": {
+                        "payment_method_preference": "IMMEDIATE_PAYMENT_REQUIRED",
+                        "landing_page": "LOGIN",
+                        "shipping_preference": "GET_FROM_FILE",
+                        "user_action": "PAY_NOW",
+                        "return_url": return_url,
+                        "cancel_url": cancel_url,
+                    }
+                }
+            },
+            "purchase_units": [
+                {
+                    "custom_id": custom_id,
+                    "amount": {
+                        "currency_code": currency,
+                        "value": amount,
+                    },
+                },
+            ],
+        }
+
+        url = f"{self.base_url}/v2/checkout/orders"
+        return self._make_request(
+            url=url, method="POST", json=data, headers=self.headers
+        ).json()
+
+    def capture_payment_for_order(self, id: str) -> None:
+        data = {}
+
+        url = f"{self.base_url}/v2/checkout/orders/{id}/capture"
+        self._make_request(url=url, method="POST", json=data, headers=self.headers)
+
 
 class PayPalClient(PaymentClient, OriginalPayPalClient):
 
     @staticmethod
     def get_hateoas_url(links: list[dict[str, str]], rel="approve"):
         return next((link["href"] for link in links if link["rel"] == rel), None)
+
+    def generate_checkout_data(
+        self,
+        custom_id: str,
+        amount: Decimal,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
+    ) -> dict[str, str] | None:
+        try:
+            resp = self.create_order(
+                custom_id, f"{amount:.2f}", return_url=return_url, cancel_url=cancel_url
+            )
+        except requests.exceptions.HTTPError as e:
+            logger.error(e.response.text)
+            return None
+
+        data = {}
+        logger.info(f"generate_checkout_data resp: {resp}")
+        data["id"] = resp["id"]
+        data["url"] = self.get_hateoas_url(resp.get("links", []), rel="payer-action")
+        return data
 
     def generate_subscription_data(
         self,
@@ -315,3 +381,6 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
         logger.info(f"generate_change_subscription_data resp: {resp}")
         data["url"] = self.get_hateoas_url(resp.get("links", []))
         return data
+
+    def approve_order(self, id: str):
+        self.capture_payment_for_order(id)

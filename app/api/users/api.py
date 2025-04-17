@@ -7,7 +7,14 @@ from django.db.models import Q
 
 from ninja import Router, Header
 
-from payments.models import Plan, PlanProcessorLink, Subscription, Invoice, Payment
+from payments.models import (
+    Plan,
+    PlanProcessorLink,
+    Processor,
+    Subscription,
+    Invoice,
+    Payment,
+)
 from payments.clients import PaymentClient
 from customizations.context import get_subscription_context
 
@@ -48,7 +55,7 @@ def me(request: HttpRequest):
 
 @router.post(
     "/me/subscribe",
-    summary="Create subscription and return payment link",
+    summary="Request for subscription and return payment link to activate",
     response={200: LinkSchema, 400: ErrorSchema},
 )
 @authenticate_client(full=False)
@@ -58,7 +65,7 @@ def subscribe(
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
     try:
-        plan = Plan.objects.get(id=data.plan_id, is_enabled=True, is_recurring=True)
+        plan = Plan.objects.get(id=data.plan_id, is_enabled=True)
     except Plan.DoesNotExist:
         return 400, {"message": "Plan not found"}
 
@@ -80,28 +87,41 @@ def subscribe(
                 processor_id=data.payment_method_id,
                 plan__client_id=request.client.id,
             )
-            & Q(external_id__isnull=False)
         )
     except PlanProcessorLink.DoesNotExist:
         return 400, {"message": "Payment method not found"}
 
-    provider: PaymentClient = pr.processor.get_provider()
+    if plan.is_recurring and not pr.external_id:
+        return 400, {"message": "Payment method not found"}
 
     tracking_id = Invoice.generate_tracking_id()
 
     # TODO: Add lock and check if subscription exist to reuse link?
-    payload = provider.generate_subscription_data(
-        pr.external_id,
-        tracking_id,
-        request.client.return_url,
-        (
-            request.client.cancel_url
-            if request.client.cancel_url
-            else request.client.return_url
-        ),
-    )
+    processor: Processor = pr.processor
+    if plan.is_recurring:
+        url = processor.create_subscription_url(
+            tracking_id,
+            pr.external_id,
+            request.client.return_url,
+            (
+                request.client.cancel_url
+                if request.client.cancel_url
+                else request.client.return_url
+            ),
+        )
+    else:
+        url = processor.create_checkout_url(
+            f"{plan.id}:{tracking_id}",  # TODO: Move to one place for better control
+            plan.price,
+            request.client.return_url,
+            (
+                request.client.cancel_url
+                if request.client.cancel_url
+                else request.client.return_url
+            ),
+        )
 
-    if not payload or not payload.get("url"):
+    if not url:
         return 400, {"message": "No payment link"}
 
     with transaction.atomic():
@@ -115,7 +135,7 @@ def subscribe(
             amount=plan.price,
         )
 
-    return {"url": payload["url"]}
+    return {"url": url}
 
 
 @router.post(
@@ -149,8 +169,8 @@ def resubscribe(
             "message": "Subscription without payment could not be changed, cancled or re-subscribed"
         }
 
-    provider: PaymentClient = sub.payment.invoice.processor.get_provider()
-    provider.activate_subscription(
+    processor: Processor = sub.payment.invoice.processor
+    processor.activate_subscription(
         sub.payment.invoice.external_id,
         data.reason,
     )
@@ -189,11 +209,10 @@ def unsubscribe(
             "message": "Subscription without payment could not be changed, cancled or re-subscribed"
         }
 
-    provider: PaymentClient = sub.payment.invoice.processor.get_provider()
-    provider.deactivate_subscription(
+    processor: Processor = sub.payment.invoice.processor
+    processor.deactivate_subscription(
         sub.payment.invoice.external_id,
         data.reason,
-        suspend=True,  # TODO: Add flag to processor model
     )
 
     return 204, None
@@ -244,8 +263,8 @@ def change_plan(
     # or user always same provider
     proc_ref = plan.links.filter(processor=sub.invoice.processor).first()
 
-    provider: PaymentClient = sub.payment.invoice.processor.get_provider()
-    payload = provider.generate_change_subscription_data(
+    processor: Processor = sub.payment.invoice.processor
+    url = processor.create_change_plan_url(
         sub.payment.invoice.external_id,
         proc_ref.external_id,
         request.client.return_url,
@@ -255,7 +274,7 @@ def change_plan(
             else request.client.return_url
         ),
     )
-    if not payload or not payload.get("url"):
+    if not url:
         return 400, {"message": "Subscription could not be changed"}
 
-    return 200, {"url": payload["url"]}
+    return 200, {"url": url}

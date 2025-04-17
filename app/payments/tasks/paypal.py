@@ -96,14 +96,17 @@ def sync_products():
 
 @shared_task()
 def sync_plans():
-    plans = Plan.objects.select_related("client").filter(
-        is_recurring=True, client__is_enabled=True
-    )
+    plans = Plan.objects.select_related("client").filter(client__is_enabled=True)
 
     for plan in plans:
         client = plan.client
         processors = Processor.objects.filter(is_enabled=True, type=Processor.PAYPAL)
         for processor in processors:
+            if not plan.is_recurring:
+                plan.links.get_or_create(processor=processor)
+                logger.info("PayPal processor link added to plan: %s", plan.id)
+                continue
+
             paypal_client = PayPalClient(
                 processor.client_id, processor.secret, processor.is_sandbox
             )

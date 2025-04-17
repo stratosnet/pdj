@@ -2,6 +2,10 @@ class PaymentException(BaseException):
     pass
 
 
+class InvoiceNotFound(PaymentException):
+    pass
+
+
 class PaymentNotFound(PaymentException):
     pass
 
