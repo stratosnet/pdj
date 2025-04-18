@@ -314,8 +314,8 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
 
     def generate_subscription_data(
         self,
-        plan_id: str,
         custom_id: str,
+        plan_id: str,
         return_url: str | None = None,
         cancel_url: str | None = None,
     ) -> dict[str, str] | None:

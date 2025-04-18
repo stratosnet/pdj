@@ -1,10 +1,9 @@
 from django.contrib import admin
-from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from .models import (
     Plan,
-    # Invoice,
-    Payment,
+    Invoice,
     Subscription,
     PlanProcessorLink,
     Processor,
@@ -19,8 +18,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "user",
         "plan",
         "client",
-        "payment",
-        "status",
+        "admin_status_with_color",
         "start_at",
         "end_at",
         "next_billing_at",
@@ -30,8 +28,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
     fields = [
         "user",
         "plan",
-        "payment",
-        "status",
+        "admin_status_with_color",
         "start_at",
         "end_at",
         "next_billing_at",
@@ -39,8 +36,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "created_at",
     ]
     readonly_fields = [
-        "status",
-        "payment",
+        "admin_status_with_color",
         "start_at",
         "created_at",
     ]
@@ -48,41 +44,14 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return (
-            super()
-            .get_queryset(request)
-            .select_related("user", "plan", "plan__client", "payment")
+            super().get_queryset(request).select_related("user", "plan", "plan__client")
         )
 
 
-# @admin.register(Invoice)
-# class InvoiceAdmin(admin.ModelAdmin):
-#     list_display = [
-#         "pk",
-#         "user",
-#         "external_id",
-#         "processor",
-#         "created_at",
-#     ]
-
-#     def get_queryset(self, request):
-#         return super().get_queryset(request).select_related("user", "processor")
-
-#     def has_add_permission(self, request, obj=None):
-#         return False
-
-#     def has_delete_permission(self, request, obj=None):
-#         return False
-
-#     def has_change_permission(self, request, obj=None):
-#         return False
-
-
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
     list_display = [
         "id",
-        "user",
-        "invoice",
         "processor",
         "external_id",
         "amount",
@@ -92,11 +61,7 @@ class PaymentAdmin(admin.ModelAdmin):
     ]
 
     def get_queryset(self, request):
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("invoice", "invoice__processor", "invoice__user")
-        )
+        return super().get_queryset(request).select_related("processor")
 
     def has_add_permission(self, request, obj=None):
         return False

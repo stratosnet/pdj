@@ -12,10 +12,9 @@ from payments.models import (
     PlanProcessorLink,
     Processor,
     Subscription,
-    Invoice,
-    Payment,
 )
 from payments.clients import PaymentClient
+from payments.serializers import ProcessorIDSerializer
 from customizations.context import get_subscription_context
 
 from ..authenticators import (
@@ -94,13 +93,12 @@ def subscribe(
     if plan.is_recurring and not pr.external_id:
         return 400, {"message": "Payment method not found"}
 
-    tracking_id = Invoice.generate_tracking_id()
-
     # TODO: Add lock and check if subscription exist to reuse link?
+    custom_id = ProcessorIDSerializer.serialize_subscription()
     processor: Processor = pr.processor
     if plan.is_recurring:
         url = processor.create_subscription_url(
-            tracking_id,
+            custom_id,
             pr.external_id,
             request.client.return_url,
             (
@@ -111,7 +109,7 @@ def subscribe(
         )
     else:
         url = processor.create_checkout_url(
-            f"{plan.id}:{tracking_id}",  # TODO: Move to one place for better control
+            custom_id,
             plan.price,
             request.client.return_url,
             (
@@ -124,15 +122,17 @@ def subscribe(
     if not url:
         return 400, {"message": "No payment link"}
 
-    with transaction.atomic():
-        invoice = Invoice.objects.create(
-            id=tracking_id,
+    _, subscription_id = ProcessorIDSerializer.deserialize(custom_id)
+
+    if sub and sub.is_null:
+        sub.id = subscription_id  # override id because of new payment link
+        sub.save(update_fields=["id"])
+    else:
+        sub = Subscription.objects.create(
+            id=subscription_id,
             user=request.auth,
-            processor=pr.processor,
-        )
-        Payment.objects.create(
-            invoice=invoice,
-            amount=plan.price,
+            plan=plan,
+            active_processor=processor,
         )
 
     return {"url": url}
@@ -151,7 +151,7 @@ def resubscribe(
 ):
     try:
         sub = Subscription.objects.select_related(
-            "plan", "payment", "payment__invoice", "payment__invoice__processor"
+            "plan", "active_processor"
         ).latest_for_user_and_client(
             user_id=request.auth.pk, client_id=request.client.pk
         )
@@ -164,14 +164,14 @@ def resubscribe(
     if not sub.is_suspended:
         return 400, {"message": "Subscription is active"}
 
-    if not sub.payment_id:
+    if not sub.external_id:
         return 400, {
             "message": "Subscription without payment could not be changed, cancled or re-subscribed"
         }
 
-    processor: Processor = sub.payment.invoice.processor
+    processor: Processor = sub.active_processor
     processor.activate_subscription(
-        sub.payment.invoice.external_id,
+        sub.external_id,
         data.reason,
     )
 
@@ -191,7 +191,7 @@ def unsubscribe(
 ):
     try:
         sub = Subscription.objects.select_related(
-            "plan", "payment", "payment__invoice", "payment__invoice__processor"
+            "plan", "active_processor"
         ).latest_for_user_and_client(
             user_id=request.auth.pk, client_id=request.client.pk
         )
@@ -204,14 +204,14 @@ def unsubscribe(
     if not sub.is_active or not sub.next_billing_at:
         return 400, {"message": "Subscription has been unsubscribed"}
 
-    if not sub.payment_id:
+    if not sub.external_id:
         return 400, {
             "message": "Subscription without payment could not be changed, cancled or re-subscribed"
         }
 
-    processor: Processor = sub.payment.invoice.processor
+    processor: Processor = sub.active_processor
     processor.deactivate_subscription(
-        sub.payment.invoice.external_id,
+        sub.external_id,
         data.reason,
     )
 
@@ -231,7 +231,7 @@ def change_plan(
 ):
     try:
         sub = Subscription.objects.select_related(
-            "plan", "payment", "payment__invoice", "payment__invoice__processor"
+            "plan", "active_processor"
         ).latest_for_user_and_client(
             user_id=request.auth.pk, client_id=request.client.pk
         )
@@ -244,7 +244,7 @@ def change_plan(
     if not sub.is_active or not sub.next_billing_at:
         return 400, {"message": "Subscription has been unsubscribed"}
 
-    if not sub.payment_id:
+    if not sub.external_id:
         return 400, {
             "message": "Subscription without payment could not be changed, cancled or re-subscribed"
         }
@@ -259,13 +259,14 @@ def change_plan(
     ):
         return 400, {"message": "Switch could be only on a different plan"}
 
+    processor: Processor = sub.active_processor
+
     # NOTE: If another provider will be added, we should add more logic here to create a correct switch
     # or user always same provider
-    proc_ref = plan.links.filter(processor=sub.invoice.processor).first()
+    proc_ref = plan.links.filter(processor=sub.processor).first()
 
-    processor: Processor = sub.payment.invoice.processor
     url = processor.create_change_plan_url(
-        sub.payment.invoice.external_id,
+        sub.external_id,
         proc_ref.external_id,
         request.client.return_url,
         (

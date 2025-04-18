@@ -23,7 +23,7 @@ class Client(models.Model):
     name = models.CharField(
         max_length=20,
         verbose_name=_("name"),
-        help_text=_("Сlient's full name or company name"),
+        help_text=_("Client's full name or company name"),
     )
     description = models.TextField(
         blank=True,
@@ -70,7 +70,7 @@ class Client(models.Model):
         blank=True,
     )
     return_url = models.URLField(
-        verbose_name=_("кeturn URL"),
+        verbose_name=_("return URL"),
         help_text=_(
             "The URL of the product page where users are redirected after completing a payment."
         ),
@@ -78,7 +78,7 @@ class Client(models.Model):
         blank=True,
     )
     cancel_url = models.URLField(
-        verbose_name=_("сancel URL"),
+        verbose_name=_("cancel URL"),
         help_text=_(
             "The URL of the product page where users are redirected if they cancel the payment. If not provided, the Return URL will be used."
         ),

@@ -8,11 +8,10 @@ from django.dispatch import Signal, receiver
 from customizations.models import EmailTemplate
 from customizations.context import get_subscription_context
 from .models import (
-    Subscription,
     Plan,
     Processor,
+    Subscription,
     Invoice,
-    Payment,
 )
 from .exceptions import (
     InvoiceNotFound,
@@ -26,58 +25,86 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 
+payment_pending = Signal()
+
+
+@receiver(payment_pending)
+@transaction.atomic
+def on_payment_pending(
+    external_sale_id: str,
+    subscription_id: str,
+    amount: Decimal,
+    currency: str,
+    created_at: datetime,
+    **kwargs,
+):
+    try:
+        sub = Subscription.objects.select_related(
+            "user",
+            "plan",
+            "active_processor",
+            "next_billing_plan",
+        ).get(id=subscription_id)
+    except Invoice.DoesNotExist:
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+
+    invoice = Invoice.objects.filter(external_id=external_sale_id).first()
+    if invoice:
+        logger.warning(f"Invoice '{external_sale_id}' was already proceed")
+        return
+
+    Invoice.objects.create(
+        subscription=sub,
+        processor=sub.active_processor,
+        external_id=external_sale_id,
+        amount=amount,
+        currency=currency,
+        status=Invoice.PENDING,
+        created_at=created_at,
+    )
+
+
 payment_completed = Signal()
 
 
 @receiver(payment_completed)
 @transaction.atomic
 def on_payment_completed(
-    invoice_id: str,
+    external_sale_id: str,
+    external_invoice_id: str,
+    subscription_id: str,
     amount: Decimal,
     currency: str,
-    start_at: datetime,
+    created_at: datetime,
     **kwargs,
 ):
     try:
-        invoice = Invoice.objects.select_related(
+        sub = Subscription.objects.select_related(
             "user",
-            "processor",
-        ).get(id=invoice_id)
+            "plan",
+            "active_processor",
+            "next_billing_plan",
+        ).get(id=subscription_id)
     except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Invoice '{invoice_id}' not found")
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
 
-    last_payment = (
-        invoice.payments.select_related("subscription").order_by("-created_at").first()
-    )
-    if not last_payment:
-        raise PaymentNotFound(f"Last payment for invoice '{invoice_id}' not found")
+    invoice = Invoice.objects.filter(external_id=external_sale_id).first()
+    if not invoice:
+        logger.warning(f"Invoice '{external_sale_id}' not found to proceed")
+        return
 
-    sub = last_payment.subscription
-    if not sub:
-        raise SubscriptionNotFound(
-            f"Subscription not found for payment '{last_payment.id}'"
-        )
+    if invoice.status == Invoice.SUCCESS:
+        logger.warning(f"Invoice '{external_sale_id}' has been proceed")
+        return
 
-    # if plan was changed for future recurring, we should apply it here
-    next_billing_plan = sub.next_billing_plan if sub.next_billing_plan_id else sub.plan
+    invoice.status = Invoice.SUCCESS
+    invoice.save()
 
-    sub.finish(start_at)
-
-    # new payment record + new sub record to combine subscription recurring chunks
-    new_payment = Payment.objects.create(
-        invoice=invoice,
-        amount=amount,
-        currency=currency,
-        status=Payment.SUCCESS,
-    )
-    sub = Subscription(
-        user=invoice.user,
-        plan=next_billing_plan,
-        payment=new_payment,
-        start_at=start_at,
-    )
-    sub.next_billing_at = sub.get_next_end_date()
-    sub.save()
+    # NOTE: Find a way to change next_billing_at time
+    if sub.next_billing_plan:
+        sub.plan = sub.next_billing_plan
+        sub.next_billing_plan = None
+        sub.save()
 
 
 subscription_suspend = Signal()
@@ -86,27 +113,35 @@ subscription_suspend = Signal()
 @receiver(subscription_suspend)
 @transaction.atomic
 def on_subscription_suspend(
-    invoice_id: str,
+    subscription_id: str,
     suspended_at: datetime | None = None,
     **kwargs,
 ):
     try:
-        invoice = Invoice.objects.select_related(
+        sub = Subscription.objects.select_related(
             "user",
-            "processor",
-        ).get(id=invoice_id)
+            "plan",
+            "active_processor",
+        ).get(id=subscription_id)
     except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Invoice '{invoice_id}' not found")
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
 
-    payment = (
-        invoice.payments.select_related("subscription").order_by("-created_at").first()
-    )
-    sub = payment.subscription
     sub.suspend(suspended_at)
 
-    context = get_subscription_context(sub)
+    # TODO: Check sql query
+    latest_invoice = sub.invoices.order_by("-created_at").first()
+    # possible because no payment sale
+    if not latest_invoice:
+        latest_invoice = Invoice(
+            subscription=sub,
+            processor=sub.active_processor,
+            amount=sub.plan.price,
+            status=Invoice.SUCCESS,
+        )
+
+    context = get_subscription_context(latest_invoice)
     template = EmailTemplate.objects.get_by_type(EmailTemplate.SUBSCRIPTION_CANCELED)
-    template.send(invoice.user, context)
+    template.send(sub.user, context)
 
 
 subscription_activate = Signal()
@@ -117,7 +152,7 @@ subscription_activate = Signal()
 def on_subscription_activate(
     external_plan_id: str,
     external_invoice_id: str,
-    invoice_id: str,
+    subscription_id: str,
     amount: str,
     currency: str,
     start_at: datetime,
@@ -125,64 +160,36 @@ def on_subscription_activate(
     **kwargs,
 ):
     try:
-        invoice = Invoice.objects.select_related(
+        sub = Subscription.objects.select_related(
             "user",
-            "processor",
-        ).get(id=invoice_id)
+            "plan",
+            "active_processor",
+        ).get(id=subscription_id)
     except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Invoice '{invoice_id}' not found")
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
 
-    payment = (
-        invoice.payments.select_related("subscription").order_by("-created_at").first()
-    )
-    if not payment:
-        raise PaymentNotFound(f"Last payment for invoice '{invoice_id}' not found")
+    if sub.is_null:
+        sub.external_id = external_invoice_id
+        sub.start_at = start_at
+        sub.next_billing_at = end_at
+        sub.save()
 
-    # first event when user has bought subscription
-    if payment.status == Payment.PENDING:
-        payment.status = Payment.SUCCESS
-        payment.amount = amount
-        payment.currency = currency
-        payment.save(update_fields=["status", "amount", "currency"])
-
-        invoice.external_id = external_invoice_id
-        invoice.save(update_fields=["external_id"])
-
-        plan = (
-            Plan.objects.select_related("client")
-            .filter(links__external_id=external_plan_id)
-            .first()
-        )
-        sub = Subscription.objects.latest_for_user_and_client(
-            user_id=invoice.user.pk,
-            client_id=plan.client_id,
+        # pseudoinvoice for mailing
+        invoice = Invoice(
+            subscription=sub,
+            processor=sub.active_processor,
+            amount=amount,
+            currency=currency,
+            status=Invoice.SUCCESS,
         )
 
-        # so if we had previous one, we should reset all fields related to statuses
-        # mostly this is related for non recurring logic
-        if sub:
-            sub.finish(start_at)
-
-        sub = Subscription.objects.create(
-            user=invoice.user,
-            plan=plan,
-            payment=payment,
-            start_at=start_at,
-            next_billing_at=end_at,
-        )
-
-        context = get_subscription_context(sub)
+        context = get_subscription_context(invoice)
         template = EmailTemplate.objects.get_by_type(EmailTemplate.PAYMENT_SUCCESS)
-        template.send(invoice.user, context)
-        return
-
-    # for reactivation only, same event
-    elif payment.subscription and payment.subscription.is_suspended:
-        payment.subscription.unsuspend()
+        template.send(sub.user, context)
+    elif sub.is_suspended:
+        sub.unsuspend()
     else:
-        raise PaymentWrongStatus(
-            f"Payment for id '{invoice_id}' has wrong status (got: {payment.status}, should be: {Payment.PENDING})"
-        )
+        logger.warning(f"Subscription '{subscription_id}' got activate event again")
 
 
 subscription_update = Signal()
@@ -192,25 +199,19 @@ subscription_update = Signal()
 @transaction.atomic
 def on_subscription_update(
     external_plan_id: str,
-    invoice_id: str,
+    subscription_id: str,
     start_at: datetime,
     end_at: datetime | None = None,
     **kwargs,
 ):
     try:
-        invoice = Invoice.objects.select_related(
+        sub = Subscription.objects.select_related(
             "user",
-            "processor",
-        ).get(id=invoice_id)
+            "plan",
+            "active_processor",
+        ).get(id=subscription_id)
     except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Invoice '{invoice_id}' not found")
-
-    payment = (
-        invoice.payments.select_related("subscription", "subscription__plan")
-        .order_by("-created_at")
-        .first()
-    )
-    sub = payment.subscription if payment else None
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
 
     new_plan = (
         Plan.objects.select_related("client")
@@ -232,23 +233,34 @@ checkout_approved = Signal()
 @transaction.atomic
 def on_checkout_approved(
     external_order_id: str,
-    invoice_id: str,
+    subscription_id: str,
+    amount: Decimal,
     **kwargs,
 ):
     try:
-        invoice = Invoice.objects.select_related(
+        sub = Subscription.objects.select_related(
             "user",
-            "processor",
-        ).get(id=invoice_id)
+            "plan",
+            "active_processor",
+        ).get(id=subscription_id)
     except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Invoice '{invoice_id}' not found")
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
 
-    if not invoice.external_id:
-        invoice.external_id = external_order_id
-        invoice.save(update_fields=["external_id"])
+    if sub.external_id:
+        logger.warning(f"Subscription '{sub.external_id}' was already approved")
+        return
 
-    processor: Processor = invoice.processor
-    processor.approve_order(external_order_id)
+    if amount < sub.plan.price:
+        logger.warning(
+            f"Subscription '{sub.external_id}' got wrong payment amount (got: {amount}, required: {sub.plan.price})"
+        )
+        return
+
+    sub.external_id = external_order_id
+    sub.save(update_fields=["external_id"])
+
+    processor: Processor = sub.active_processor
+    processor.approve_order(sub.external_id)
 
 
 checkout_completed = Signal()
@@ -257,45 +269,38 @@ checkout_completed = Signal()
 @receiver(checkout_completed)
 @transaction.atomic
 def on_checkout_completed(
-    invoice_id: str,
-    plan_id: str,
+    external_order_id: str,
+    subscription_id: str,
     start_at: datetime,
     **kwargs,
 ):
     try:
-        invoice = Invoice.objects.select_related(
+        sub = Subscription.objects.select_related(
             "user",
-            "processor",
-        ).get(id=invoice_id)
+            "plan",
+            "active_processor",
+        ).get(id=subscription_id)
     except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Invoice '{invoice_id}' not found")
+        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
 
-    last_payment = (
-        invoice.payments.select_related("subscription").order_by("-created_at").first()
-    )
-    if not last_payment:
-        raise PaymentNotFound(f"Last payment for invoice '{invoice_id}' not found")
-
-    if last_payment.status == Payment.SUCCESS:
-        logger.warning(
-            f"Checkout already has been proceed for {invoice_id}, but got same event again"
-        )
+    if sub.invoices.first():
+        logger.warning(f"Subscription '{sub.external_id}' was already proceed")
         return
 
-    try:
-        sub = last_payment.subscription
-        sub.finish(start_at)
-    except Subscription.DoesNotExist:
-        pass
-
-    last_payment.status = Payment.SUCCESS
-    last_payment.save(update_fields=["status"])
-
-    sub = Subscription(
-        user=invoice.user,
-        plan_id=plan_id,
-        payment=last_payment,
-        start_at=start_at,
+    latest_sub = Subscription.objects.latest_for_user_and_client(
+        client_id=sub.plan.client_id,
+        user_id=sub.user.pk,
     )
+    if latest_sub:
+        latest_sub.finish(start_at)
+
+    sub.start_at = start_at
     sub.end_at = sub.get_next_end_date()
     sub.save()
+
+    Invoice.objects.create(
+        subscription=sub,
+        processor=sub.active_processor,
+        amount=sub.plan.price,  # TODO: Get amount and currency from request
+        status=Invoice.SUCCESS,
+    )

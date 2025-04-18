@@ -1,7 +1,7 @@
 {% extends "base" %}
 
 {% block preheader %}
-Your payment of {{ payment.currency }}{{ payment.amount }} for {{ plan.name }} was successful
+Your payment of {{ invoice.currency }}{{ invoice.amount }} for {{ plan.name }} was successful
 {% endblock %}
 
 {% block main %}
@@ -12,13 +12,13 @@ Your payment of {{ payment.currency }}{{ payment.amount }} for {{ plan.name }} w
 
 <div style="margin: 20px 0;">
   <p style="margin: 5px 0;"><strong>Member ID:</strong> {{ user.id }}</p>
-  <p style="margin: 5px 0;"><strong>Amount:</strong> {{ payment.amount|price_format(payment.currency) }}</p>
-  <p style="margin: 5px 0;"><strong>Payment Date:</strong> {{ payment.updated_at|strftime('%d %b %Y') }}</p>
+  <p style="margin: 5px 0;"><strong>Amount:</strong> {{ invoice.amount|price_format(invoice.currency) }}</p>
+  <p style="margin: 5px 0;"><strong>Payment Date:</strong> {{ invoice.updated_at|strftime('%d %b %Y') }}</p>
   <p style="margin: 5px 0;"><strong>Payment Method:</strong> {{ processor.type }}</p>
   <p style="margin: 5px 0;"><strong>Subscription:</strong> {{ plan.name }} ({{ plan.term }} {{ plan.period }})</p>
   <p style="margin: 5px 0;"><strong>Active Until:</strong> {{ (subscription.next_billing_at or subscription.end_date)|strftime('%d %b %Y') }}</p>
   {% if plan.is_recurring and subscription.next_billing_at %}
-    <p style="margin: 5px 0;"><strong>Next Payment:</strong> {{ payment.amount|price_format(payment.currency) }} in {{ plan.term }} {{ plan.period }} ({{ subscription.next_billing_at|strftime('%d %b %Y') }})</p>
+    <p style="margin: 5px 0;"><strong>Next Payment:</strong> {{ invoice.amount|price_format(invoice.currency) }} in {{ plan.term }} {{ plan.period }} ({{ subscription.next_billing_at|strftime('%d %b %Y') }})</p>
   {% endif %}
   {% if client.home_url %}
     <p style="margin: 5px 0;"><strong>Site:</strong> <a style="color: {{ theme.css_generic_link_color }}; text-decoration: underline;" href="{{ client.home_url }}">{{ client.home_url }}</a></p>

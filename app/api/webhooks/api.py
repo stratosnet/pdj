@@ -11,10 +11,12 @@ from payments.models import (
     Processor,
 )
 from payments.clients import PayPalClient
+from payments.serializers import ProcessorIDSerializer
 from payments.exceptions import (
     PaymentException,
 )
 from payments.signals import (
+    payment_pending,
     payment_completed,
     subscription_suspend,
     subscription_activate,
@@ -81,25 +83,50 @@ def webhook_paypal(
 
     try:
         match webhook_event["event_type"]:
-            # sent on next recurring payment
-            case "PAYMENT.SALE.COMPLETED":
+            # sent on pending payment
+            case "PAYMENT.SALE.PENDING":
+                external_sale_id = webhook_event["resource"]["id"]
                 external_invoice_id = webhook_event["resource"]["billing_agreement_id"]
-                invoice_id = webhook_event["resource"]["custom"]
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    webhook_event["resource"]["custom"]
+                )
                 amount = Decimal(webhook_event["resource"]["amount"]["total"])
                 currency = webhook_event["resource"]["amount"]["currency"]
-                start_at = parse_datetime(webhook_event["resource"]["create_time"])
-                payment_completed.send(
+                created_at = parse_datetime(webhook_event["resource"]["create_time"])
+                payment_pending.send(
                     sender=None,
+                    external_sale_id=external_sale_id,
                     external_invoice_id=external_invoice_id,
-                    invoice_id=invoice_id,
+                    subscription_id=subscription_id,
                     amount=amount,
                     currency=currency,
-                    start_at=start_at,
+                    created_at=created_at,
+                )
+            # sent on proceed payment
+            case "PAYMENT.SALE.COMPLETED":
+                external_sale_id = webhook_event["resource"]["id"]
+                external_invoice_id = webhook_event["resource"]["billing_agreement_id"]
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    webhook_event["resource"]["custom"]
+                )
+                amount = Decimal(webhook_event["resource"]["amount"]["total"])
+                currency = webhook_event["resource"]["amount"]["currency"]
+                created_at = parse_datetime(webhook_event["resource"]["create_time"])
+                payment_completed.send(
+                    sender=None,
+                    external_sale_id=external_sale_id,
+                    external_invoice_id=external_invoice_id,
+                    subscription_id=subscription_id,
+                    amount=amount,
+                    currency=currency,
+                    created_at=created_at,
                 )
             # send as first event when subscription created and when unsuspended
             case "BILLING.SUBSCRIPTION.ACTIVATED":
                 external_invoice_id = webhook_event["resource"]["id"]
-                invoice_id = webhook_event["resource"]["custom_id"]
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    webhook_event["resource"]["custom_id"]
+                )
                 external_plan_id = webhook_event["resource"]["plan_id"]
                 last_payment = webhook_event["resource"]["billing_info"]["last_payment"]
                 amount = Decimal(last_payment["amount"]["value"])
@@ -112,7 +139,7 @@ def webhook_paypal(
                     sender=None,
                     external_invoice_id=external_invoice_id,
                     external_plan_id=external_plan_id,
-                    invoice_id=invoice_id,
+                    subscription_id=subscription_id,
                     amount=amount,
                     currency=currency,
                     start_at=start_at,
@@ -120,7 +147,9 @@ def webhook_paypal(
                 )
             # when plan changed
             case "BILLING.SUBSCRIPTION.UPDATED":
-                invoice_id = webhook_event["resource"]["custom_id"]
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    webhook_event["resource"]["custom_id"]
+                )
                 external_plan_id = webhook_event["resource"]["plan_id"]
                 start_at = parse_datetime(webhook_event["resource"]["start_time"])
                 end_at = parse_datetime(
@@ -129,55 +158,59 @@ def webhook_paypal(
                 subscription_update.send(
                     sender=None,
                     external_plan_id=external_plan_id,
-                    invoice_id=invoice_id,
+                    subscription_id=subscription_id,
                     start_at=start_at,
                     end_at=end_at,
                 )
             # when suspended
             case "BILLING.SUBSCRIPTION.SUSPENDED":
-                invoice_id = webhook_event["resource"]["custom_id"]
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    webhook_event["resource"]["custom_id"]
+                )
                 suspended_at = parse_datetime(
                     webhook_event["resource"]["status_update_time"]
                 )
                 subscription_suspend.send(
                     sender=None,
-                    invoice_id=invoice_id,
+                    subscription_id=subscription_id,
                     suspended_at=suspended_at,
                 )
             # first receive that user approved on the page, then we need to capture (for charge)
             case "CHECKOUT.ORDER.APPROVED":
                 external_order_id = webhook_event["resource"]["id"]
-                plan_id, invoice_id = webhook_event["resource"]["purchase_units"][0][
-                    "custom_id"
-                ].split(
-                    ":"
-                )  # TODO: Move to one place for better control
+
+                purchase_unit = webhook_event["resource"]["purchase_units"][0]
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    purchase_unit["custom_id"]
+                )
+                amount = Decimal(purchase_unit["amount"]["value"])
+                currency = purchase_unit["amount"]["currency_code"]
                 checkout_approved.send(
                     sender=None,
                     external_order_id=external_order_id,
-                    plan_id=plan_id,
-                    invoice_id=invoice_id,
+                    subscription_id=subscription_id,
+                    amount=amount,
+                    currency=currency,
                 )
             # after order approved, this is a final event
             # so we should create sub and complete a payment
             case "PAYMENT.CAPTURE.COMPLETED":
                 external_order_id = webhook_event["resource"]["id"]
-                plan_id, invoice_id = webhook_event["resource"]["custom_id"].split(
-                    ":"
-                )  # TODO: Move to one place for better control
+                _, subscription_id = ProcessorIDSerializer.deserialize(
+                    webhook_event["resource"]["custom_id"]
+                )
                 start_at = parse_datetime(webhook_event["resource"]["create_time"])
                 checkout_completed.send(
                     sender=None,
                     external_order_id=external_order_id,
-                    plan_id=plan_id,
-                    invoice_id=invoice_id,
+                    subscription_id=subscription_id,
                     start_at=start_at,
                 )
             case _:
                 logger.warning(
                     f"Not supported event type: {webhook_event['event_type']}"
                 )
-                return 400, {"message": "Event match not supported"}
+                return 200, {"message": "Event match not supported"}
     except PaymentException as e:
         logger.warning(f"Payment error: {e.args}")
         return 400, {"message": f"Webhook error: {e.args[0]}"}

@@ -14,7 +14,7 @@ Your subscription to {{ plan.name }} will renew soon
     <p style="margin: 5px 0;"><strong>Website:</strong> <a style="color: {{ theme.css_generic_link_color }}; text-decoration: underline;" href="{{ client.home_url }}">{{ client.home_url }}</a></p>
   {% endif %}
   <p style="margin: 5px 0;"><strong>Member ID:</strong> {{ user.id }}</p>
-  <p style="margin: 5px 0;"><strong>Next charge:</strong> {{ payment.amount|price_format(payment.currency) }} on {{ subscription.next_billing_at|strftime('%Y-%m-%d %I:%M%p') }}</p>
+  <p style="margin: 5px 0;"><strong>Next charge:</strong> {{ invoice.amount|price_format(invoice.currency) }} on {{ subscription.next_billing_at|strftime('%Y-%m-%d %I:%M%p') }}</p>
   <p style="margin: 5px 0;"><strong>Subscription:</strong> {{ plan.name }} ({{ plan.term }} {{ plan.period }})</p>
 </div>
 

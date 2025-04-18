@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 
 from core.utils import get_default_context
 from accounts.models import Client
-from payments.models import Plan, Subscription, Payment, Processor
+from payments.models import Plan, Subscription, Invoice, Processor
 from .models import Theme
 
 
@@ -24,7 +24,15 @@ def get_test_context(request: HttpRequest):
     processor = Processor(
         type=Processor.PAYPAL,
     )
-    payment = Payment(
+    sub = Subscription(
+        user=request.user,
+        plan=plan,
+        created_at=timezone.now(),
+        end_at=None,
+        next_billing_at=timezone.now() + relativedelta(months=1),
+    )
+    invoice = Invoice(
+        subscription=sub,
         user=request.user,
         processor=processor,
         amount=plan.price,
@@ -32,20 +40,14 @@ def get_test_context(request: HttpRequest):
         created_at=timezone.now(),
         updated_at=timezone.now(),
     )
-    sub = Subscription(
-        user=request.user,
-        plan=plan,
-        payment=payment,
-        created_at=timezone.now(),
-        end_at=None,
-        next_billing_at=timezone.now() + relativedelta(months=1),
-    )
 
-    return get_subscription_context(sub)
+    return get_subscription_context(invoice)
 
 
-def get_subscription_context(sub: Subscription):
+def get_subscription_context(invoice: Invoice):
     context = get_default_context()
+
+    sub = invoice.subscription
     context["subscription"] = sub.context
     if sub.plan_id:
         context["plan"] = sub.plan.context
@@ -55,10 +57,9 @@ def get_subscription_context(sub: Subscription):
     if sub.user_id:
         context["user"] = sub.user.context
 
-    if sub.payment_id:
-        context["payment"] = sub.payment.context
-        if sub.payment.invoice_id and sub.payment.invoice.processor_id:
-            context["processor"] = sub.payment.invoice.processor.context
+    context["invoice"] = invoice.context
+    if sub.active_processor_id:
+        context["processor"] = sub.active_processor.context
 
     theme = Theme.objects.filter(active=True).first()
     if theme:

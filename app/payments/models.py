@@ -12,6 +12,8 @@ from django.urls import reverse
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
+from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
 from core.utils import mask_secret, generate_base_secret, build_full_path
 
@@ -173,6 +175,7 @@ class SubscriptionQuerySet(models.QuerySet):
         return self.filter(
             Q(
                 user_id=user_id,
+                start_at__isnull=False,
             ),
         ).order_by("-created_at")
 
@@ -182,7 +185,11 @@ class SubscriptionQuerySet(models.QuerySet):
         client_id: int,
     ):
         return (
-            self.filter(user_id=user_id, plan__client_id=client_id)
+            self.filter(
+                user_id=user_id,
+                plan__client_id=client_id,
+                start_at__isnull=False,
+            )
             .order_by("-created_at")
             .first()
         )
@@ -196,11 +203,12 @@ class Subscription(models.Model):
 
     STATUSES = (
         (NULL, "NULL"),
-        (ACTIVATED, "ACTIVATED"),
+        (ACTIVATED, "ACTIVE"),
         (SUSPENDED, "SUSPENDED"),
         (EXPIRED, "EXPIRED"),
     )
 
+    # for PayPal is a custom id
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -214,15 +222,22 @@ class Subscription(models.Model):
         related_name="subscriptions",
         on_delete=models.CASCADE,
     )
-    payment = models.OneToOneField(
-        "Payment",
-        verbose_name=_("payment"),
-        related_name="subscription",
-        on_delete=models.SET_NULL,
+    # for better and easier handling on webhooks
+    active_processor = models.ForeignKey(
+        "Processor",
+        verbose_name=_("active processor"),
+        related_name="subscriptions",
         null=True,
         blank=True,
+        on_delete=models.SET_NULL,
     )
-    start_at = models.DateTimeField(_("start at"))
+    # PayPal notes
+    # in case of billing subscriptions - invoice id (billing agreement)
+    # in case of order - order id
+    external_id = models.CharField(
+        _("external_id"), max_length=128, unique=True, null=True
+    )
+    start_at = models.DateTimeField(_("start at"), null=True, blank=True)
     end_at = models.DateTimeField(_("end at"), null=True, blank=True)
     suspended_at = models.DateTimeField(_("suspended at"), null=True, blank=True)
     next_billing_at = models.DateTimeField(_("next billing at"), null=True, blank=True)
@@ -245,7 +260,7 @@ class Subscription(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"user: {self.user_id} - invoice: {self.payment_id}"
+        return f"{self.id}"
 
     @property
     @admin.display(
@@ -269,6 +284,35 @@ class Subscription(models.Model):
 
     def get_status_display(self):
         return dict(self.STATUSES)[self.status]
+
+    @property
+    @admin.display(
+        description=_("status"),
+    )
+    def admin_status_with_color(self):
+        # status = self.status
+        match (self.status):
+            case self.NULL:
+                return mark_safe(
+                    f"<b style='color:red;'>{self.get_status_display()}</b>"
+                )
+            case self.SUSPENDED:
+                return mark_safe(
+                    f"<b style='color:orange;'>{self.get_status_display()}</b>"
+                )
+            case self.ACTIVATED:
+                return mark_safe(
+                    f"<b style='color:green;'>{self.get_status_display()}</b>"
+                )
+            case self.EXPIRED:
+                return mark_safe(
+                    f"<b style='color:red;'>{self.get_status_display()}</b>"
+                )
+
+    @property
+    @admin.display(description=_("is null"), boolean=True)
+    def is_null(self):
+        return self.status == self.NULL
 
     @property
     @admin.display(description=_("is active"), boolean=True)
@@ -345,40 +389,6 @@ class Subscription(models.Model):
 
 class Invoice(models.Model):
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    external_id = models.CharField(
-        _("external_id"), max_length=128, unique=True, null=True
-    )
-    processor = models.ForeignKey(
-        "Processor",
-        verbose_name=_("processor"),
-        related_name="invoices",
-        on_delete=models.CASCADE,
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        verbose_name=_("user"),
-        related_name="payments",
-        on_delete=models.CASCADE,
-    )
-    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
-    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
-
-    class Meta:
-        verbose_name = _("invoice")
-        verbose_name_plural = _("invoices")
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"{self.id}"
-
-    @staticmethod
-    def generate_tracking_id():
-        return str(uuid.uuid4())
-
-
-class Payment(models.Model):
-
     PENDING = 1
     CANCELED = 2
     SUCCESS = 3
@@ -394,11 +404,25 @@ class Payment(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    invoice = models.ForeignKey(
-        "Invoice",
-        verbose_name=_("invoice"),
-        related_name="payments",
+    subscription = models.ForeignKey(
+        "Subscription",
+        verbose_name=_("subscription"),
+        related_name="invoices",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    processor = models.ForeignKey(
+        "Processor",
+        verbose_name=_("processor"),
+        related_name="invoices",
         on_delete=models.CASCADE,
+    )
+    # PayPal notes
+    # in case of billing subscriptions - sale_id for link
+    # in case of order - empty
+    external_id = models.CharField(
+        _("external_id"), max_length=128, unique=True, null=True
     )
     amount = models.DecimalField(_("amount"), max_digits=16, decimal_places=2)
     currency = models.CharField(
@@ -409,48 +433,12 @@ class Payment(models.Model):
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     class Meta:
-        verbose_name = _("payment")
-        verbose_name_plural = _("payments")
+        verbose_name = _("invoice")
+        verbose_name_plural = _("invoices")
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.pk} ({self.get_status_display()})"
-
-    @cached_property
-    def subscription_id(self):
-        return self.subscription.id if self.subscription else None
-
-    @cached_property
-    @admin.display(
-        ordering="invoice__user",
-        description=_("user"),
-    )
-    def user(self):
-        return self.invoice.user if self.invoice_id and self.invoice.user_id else None
-
-    @cached_property
-    @admin.display(
-        ordering="invoice__processor",
-        description=_("processor"),
-    )
-    def processor(self):
-        return (
-            self.invoice.processor
-            if self.invoice_id and self.invoice.processor_id
-            else None
-        )
-
-    @cached_property
-    @admin.display(
-        ordering="invoice__external_id",
-        description=_("external ID"),
-    )
-    def external_id(self):
-        return (
-            self.invoice.external_id
-            if self.invoice_id and self.invoice.external_id
-            else None
-        )
 
     @property
     def expired_at(self):
@@ -598,7 +586,7 @@ class Processor(models.Model):
             return_url,
             cancel_url,
         )
-        return payload.get("url")
+        return payload.get("url") if payload else None
 
     def create_change_plan_url(
         self,
@@ -614,7 +602,7 @@ class Processor(models.Model):
             return_url,
             cancel_url,
         )
-        return payload.get("url")
+        return payload.get("url") if payload else None
 
     def activate_subscription(
         self,
