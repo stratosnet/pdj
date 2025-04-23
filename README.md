@@ -23,7 +23,7 @@ We aimed for a lightweight API — as an alternative to complex solutions like H
 
 - Development (and for quick run): [dev](https://github.com/stratosnet/pdj#development)
 - FAQ: [faq](https://github.com/stratosnet/pdj/blob/main/docs/faq.md)
-- Environment configuration: [env](https://github.com/stratosnet/pdj/blob/main/docs/config.md)
+- Environment configuration: [env](https://github.com/stratosnet/pdj/blob/main/docs/env.md)
 - Production setup: [prod](https://github.com/stratosnet/pdj/blob/main/docs/production.md)
 
 ## Development
