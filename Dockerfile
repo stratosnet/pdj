@@ -10,7 +10,7 @@ WORKDIR /app
 ARG BUILD_LOCAL=false
 
 ENV UV_COMPILE_BYTECODE=1
-ENV UV_PROJECT_ENVIRONMENT=$HOME/".virtualenvs/app"
+ENV UV_PROJECT_ENVIRONMENT=/root/.virtualenvs/app
 ENV PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
 
 COPY pyproject.toml uv.lock /app/
