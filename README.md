@@ -1,7 +1,7 @@
 # PDJ [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)![t](https://img.shields.io/badge/status-maintained-yellow.svg)[![License: Elastic License 2.0](https://img.shields.io/badge/license-Elastic%202.0-blue.svg)](https://github.com/stratosnet/pdj/blob/master/LICENSE.md)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/stratosnet/pdj/.github/logos/dj_logo.png" alt="PDJ" width="256">
+  <img src="https://raw.githubusercontent.com/stratosnet/pdj/refs/heads/main/.github/logos/dj_logo.png" alt="PDJ" width="128">
 </p>
 
 <p align="center">
@@ -22,9 +22,9 @@ We aimed for a lightweight API — as an alternative to complex solutions like H
 ## Getting started
 
 - Development (and for quick run): [dev](https://github.com/stratosnet/pdj#development)
-- FAQ: [faq](https://github.com/stratosnet/pdj/docs/faq.md)
-- Environment configuration: [env](https://github.com/stratosnet/pdj/docs/config.md)
-- Production setup: [prod](https://github.com/stratosnet/pdj/docs/production.md)
+- FAQ: [faq](https://github.com/stratosnet/pdj/blob/main/docs/faq.md)
+- Environment configuration: [env](https://github.com/stratosnet/pdj/blob/main/docs/config.md)
+- Production setup: [prod](https://github.com/stratosnet/pdj/blob/main/docs/production.md)
 
 ## Development
 

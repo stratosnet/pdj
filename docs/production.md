@@ -8,7 +8,7 @@ This guide provides instructions for deploying the payment service using Docker 
 
 The quickstart Docker image is an all-in-one container launching the PDJ server, the PDJ worker for background jobs and a Redis server to schedule those jobs. While suitable for local development and testing, it's usually better in production to have dedicated containers for each purpose.
 
-Docker Compose greatly simplifies the configuration of multiple containers. This is probably the easiest way if you already know Docker and want to deploy on your own server. You'll find typical [docker-compose.yml](https://github.com/stratosnet/pdj/docker-compose.yml) configuration for PDJ.
+Docker Compose greatly simplifies the configuration of multiple containers. This is probably the easiest way if you already know Docker and want to deploy on your own server. You'll find typical [docker-compose.yml](https://github.com/stratosnet/pdj/blob/main/docker-compose.yml) configuration for PDJ.
 
 ## Post-deployment Setup
 
