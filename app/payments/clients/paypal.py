@@ -106,6 +106,14 @@ class OriginalPayPalClient:
         url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/activate"
         self._make_request(url=url, method="POST", json=data, headers=self.headers)
 
+    def show_subscription_details(self, subscription_id: str) -> None:
+        data = {}
+
+        url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}"
+        return self._make_request(
+            url=url, method="GET", json=data, headers=self.headers
+        ).json()
+
     def revise_billing_subscription(
         self,
         subscription_id: str,

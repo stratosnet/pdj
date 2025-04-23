@@ -42,7 +42,7 @@ class SubscribeSchema(Schema):
     reason: str
 
 
-class ChangePlanSchema(Schema):
+class UpgradePlanSchema(Schema):
     to_plan_id: uuid.UUID
 
 

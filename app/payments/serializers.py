@@ -10,6 +10,10 @@ class ProcessorIDSerializer:
         return f"sub{cls.SEPARATOR}{uuid.uuid4().hex}"
 
     @classmethod
+    def serialize_plan_upgrade(cls) -> str:
+        return f"planup{cls.SEPARATOR}{uuid.uuid4().hex}"
+
+    @classmethod
     def deserialize(cls, custom_id: str) -> Tuple[str, Optional[str]]:
         parts = custom_id.split(cls.SEPARATOR)
 

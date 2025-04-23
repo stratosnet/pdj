@@ -3,6 +3,7 @@ from decimal import Decimal
 from datetime import datetime
 
 from django.db import transaction
+from django.utils import timezone
 from django.dispatch import Signal, receiver
 
 from customizations.models import EmailTemplate
@@ -14,9 +15,6 @@ from .models import (
     Invoice,
 )
 from .exceptions import (
-    InvoiceNotFound,
-    PaymentNotFound,
-    PaymentWrongStatus,
     SubscriptionNotFound,
     PlanNotFound,
 )
@@ -45,8 +43,8 @@ def on_payment_pending(
             "active_processor",
             "next_billing_plan",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     invoice = Invoice.objects.filter(external_id=external_sale_id).first()
     if invoice:
@@ -85,8 +83,8 @@ def on_payment_completed(
             "active_processor",
             "next_billing_plan",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     invoice = Invoice.objects.filter(external_id=external_sale_id).first()
     if not invoice:
@@ -123,8 +121,8 @@ def on_subscription_suspend(
             "plan",
             "active_processor",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     sub.suspend(suspended_at)
 
@@ -165,8 +163,8 @@ def on_subscription_activate(
             "plan",
             "active_processor",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     if sub.is_null:
         sub.external_id = external_invoice_id
@@ -181,6 +179,8 @@ def on_subscription_activate(
             amount=amount,
             currency=currency,
             status=Invoice.SUCCESS,
+            updated_at=timezone.now(),
+            created_at=timezone.now(),
         )
 
         context = get_subscription_context(invoice)
@@ -210,8 +210,8 @@ def on_subscription_update(
             "plan",
             "active_processor",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     new_plan = (
         Plan.objects.select_related("client")
@@ -243,8 +243,8 @@ def on_checkout_approved(
             "plan",
             "active_processor",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     if sub.external_id:
         logger.warning(f"Subscription '{sub.external_id}' was already approved")
@@ -280,8 +280,8 @@ def on_checkout_completed(
             "plan",
             "active_processor",
         ).get(id=subscription_id)
-    except Invoice.DoesNotExist:
-        raise InvoiceNotFound(f"Subscription '{subscription_id}' not found")
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
 
     if sub.invoices.first():
         logger.warning(f"Subscription '{sub.external_id}' was already proceed")

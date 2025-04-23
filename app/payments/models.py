@@ -171,6 +171,7 @@ class Plan(models.Model):
 
 class SubscriptionQuerySet(models.QuerySet):
 
+    # TODO: Update this
     def get_user_subscriptions(self, user_id: int):
         return self.filter(
             Q(
@@ -377,6 +378,10 @@ class Subscription(models.Model):
                 return self.start_at + timedelta(days=30 * self.plan.term)
             case self.plan.YEAR:
                 return self.start_at + timedelta(days=365 * self.plan.term)
+
+    def calculate_upgrade_amount(self, upgrade_plan: Plan) -> Decimal:
+        # TODO
+        return Decimal(0)
 
     @cached_property
     def context(self):

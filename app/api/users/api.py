@@ -29,7 +29,7 @@ from .schemas import (
     CheckoutSchema,
     ErrorSchema,
     SubscribeSchema,
-    ChangePlanSchema,
+    UpgradePlanSchema,
 )
 
 
@@ -53,12 +53,80 @@ def me(request: HttpRequest):
 
 
 @router.post(
+    "/me/upgrade",
+    summary="Request for upgrade of active subscription (not implemented)",
+    include_in_schema=False,
+    response={200: LinkSchema, 400: ErrorSchema},
+)
+@authenticate_client(full=False)
+def me_upgrade(
+    request: HttpRequest,
+    data: UpgradePlanSchema,
+    client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
+):
+    sub = Subscription.objects.select_related(
+        "plan",
+        "active_processor",
+        "next_billing_plan",
+    ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
+    if not sub:
+        return 400, {"message": "Subscription not found"}
+
+    if sub.is_expired:
+        return 400, {"message": "Subscription is expired"}
+
+    if sub.is_suspended:
+        return 400, {"message": "Subscription is suspended"}
+
+    if not sub.external_id:
+        return 400, {
+            "message": "Subscription without payment could not be changed, cancled or re-subscribed"
+        }
+
+    if sub.plan.is_recurring and not sub.next_billing_plan_id:
+        return 400, {"message": "Re-curring subscription should first to change a plan"}
+
+    try:
+        next_plan = Plan.objects.get(id=data.to_plan_id)
+    except Plan.DoesNotExist:
+        return 400, {"message": "Plan not found"}
+
+    if next_plan.id == sub.plan.id or (
+        sub.next_billing_plan_id and next_plan.id == sub.next_billing_plan_id
+    ):
+        return 400, {"message": "Upgrade could be only on a different plan"}
+
+    custom_id = ProcessorIDSerializer.serialize_plan_upgrade()
+
+    amount = sub.calculate_upgrade_amount(next_plan)
+    if amount == 0:
+        return 400, {"message": "Upgrade could be only on plan higher"}
+
+    url = sub.active_processor.create_checkout_url(
+        custom_id,
+        amount,
+        # TODO: Add arg to path for action upgrade
+        request.client.return_url,
+        (
+            request.client.cancel_url
+            if request.client.cancel_url
+            else request.client.return_url
+        ),
+    )
+
+    if not url:
+        return 400, {"message": "No payment link"}
+
+    return 200, {"url": url}
+
+
+@router.post(
     "/me/subscribe",
     summary="Request for subscription and return payment link to activate",
     response={200: LinkSchema, 400: ErrorSchema},
 )
 @authenticate_client(full=False)
-def subscribe(
+def me_subscribe(
     request: HttpRequest,
     data: CheckoutSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
@@ -144,18 +212,15 @@ def subscribe(
     response={204: None, 400: ErrorSchema},
 )
 @authenticate_client(full=False)
-def resubscribe(
+def me_resubscribe(
     request: HttpRequest,
     data: SubscribeSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
-    try:
-        sub = Subscription.objects.select_related(
-            "plan", "active_processor"
-        ).latest_for_user_and_client(
-            user_id=request.auth.pk, client_id=request.client.pk
-        )
-    except Subscription.DoesNotExist:
+    sub = Subscription.objects.select_related(
+        "plan", "active_processor"
+    ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
+    if not sub:
         return 400, {"message": "Subscription not found"}
 
     if not sub.plan.is_recurring:
@@ -184,18 +249,15 @@ def resubscribe(
     response={204: None, 400: ErrorSchema},
 )
 @authenticate_client(full=False)
-def unsubscribe(
+def me_unsubscribe(
     request: HttpRequest,
     data: SubscribeSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
-    try:
-        sub = Subscription.objects.select_related(
-            "plan", "active_processor"
-        ).latest_for_user_and_client(
-            user_id=request.auth.pk, client_id=request.client.pk
-        )
-    except Subscription.DoesNotExist:
+    sub = Subscription.objects.select_related(
+        "plan", "active_processor"
+    ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
+    if not sub:
         return 400, {"message": "Subscription not found"}
 
     if not sub.plan.is_recurring:
@@ -224,18 +286,15 @@ def unsubscribe(
     response={200: LinkSchema, 400: ErrorSchema},
 )
 @authenticate_client(full=False)
-def change_plan(
+def me_change_plan(
     request: HttpRequest,
-    data: ChangePlanSchema,
+    data: UpgradePlanSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
-    try:
-        sub = Subscription.objects.select_related(
-            "plan", "active_processor"
-        ).latest_for_user_and_client(
-            user_id=request.auth.pk, client_id=request.client.pk
-        )
-    except Subscription.DoesNotExist:
+    sub = Subscription.objects.select_related(
+        "plan", "active_processor"
+    ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
+    if not sub:
         return 400, {"message": "Subscription not found"}
 
     if not sub.plan.is_recurring:
@@ -250,12 +309,12 @@ def change_plan(
         }
 
     try:
-        plan = Plan.objects.get(id=data.to_plan_id)
+        next_plan = Plan.objects.get(id=data.to_plan_id)
     except Plan.DoesNotExist:
         return 400, {"message": "Plan not found"}
 
-    if plan.id == sub.plan.id or (
-        sub.next_billing_plan_id and plan.id == sub.next_billing_plan_id
+    if next_plan.id == sub.plan.id or (
+        sub.next_billing_plan_id and next_plan.id == sub.next_billing_plan_id
     ):
         return 400, {"message": "Switch could be only on a different plan"}
 
@@ -263,7 +322,7 @@ def change_plan(
 
     # NOTE: If another provider will be added, we should add more logic here to create a correct switch
     # or user always same provider
-    proc_ref = plan.links.filter(processor=sub.processor).first()
+    proc_ref = next_plan.links.filter(processor=sub.processor).first()
 
     url = processor.create_change_plan_url(
         sub.external_id,

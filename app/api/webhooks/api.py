@@ -212,7 +212,7 @@ def webhook_paypal(
                 )
                 return 200, {"message": "Event match not supported"}
     except PaymentException as e:
-        logger.warning(f"Payment error: {e.args}")
+        logger.warning(f"Payment error: {e.args[0]}")
         return 400, {"message": f"Webhook error: {e.args[0]}"}
     except Exception as e:
         logger.exception(e)
