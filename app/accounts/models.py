@@ -1,5 +1,4 @@
 import uuid
-import base64
 
 from django.conf import settings
 from django.db import models
@@ -146,6 +145,11 @@ class UserManager(BaseUserManager):
             raise ValueError("Superuser must have is_superuser=True.")
 
         return self._create_user(email, password, **extra_fields)
+
+    def get_from_sso(self, sub: str):
+        return User.objects.prefetch_related("sso_identities").get(
+            sso_identities__sub=sub
+        )
 
 
 class User(AbstractUser):

@@ -60,7 +60,7 @@ class OIDCBearer(HttpBearer):
 
         sub = access_token_info["id"]
         try:
-            user = User.objects.get(sso_identities__sub=sub)
+            user = User.objects.get_from_sso(sub=sub)
         except User.DoesNotExist:
             userinfo = fief_client.userinfo(token)
             email = userinfo["email"]

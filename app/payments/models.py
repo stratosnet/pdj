@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.core.validators import RegexValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery
 from django.utils import timezone
 from django.conf import settings
 from django.contrib import admin
@@ -171,29 +171,25 @@ class Plan(models.Model):
 
 class SubscriptionQuerySet(models.QuerySet):
 
-    # TODO: Update this
-    def get_user_subscriptions(self, user_id: int):
-        return self.filter(
-            Q(
-                user_id=user_id,
-                start_at__isnull=False,
-            ),
-        ).order_by("-created_at")
+    def get_user_subscriptions(self, user_id: int | None = None):
+        latest_sub = Subscription.objects.filter(user_id=OuterRef("user_id")).values(
+            "id"
+        )[:1]
+        q = Q(id__in=Subquery(latest_sub))
+        if user_id is not None:
+            q &= Q(user_id=user_id)
+        return self.filter(q)
 
     def latest_for_user_and_client(
         self,
         user_id: int,
         client_id: int,
     ):
-        return (
-            self.filter(
-                user_id=user_id,
-                plan__client_id=client_id,
-                start_at__isnull=False,
-            )
-            .order_by("-created_at")
-            .first()
-        )
+        return self.filter(
+            user_id=user_id,
+            plan__client_id=client_id,
+            start_at__isnull=False,
+        ).first()
 
 
 class Subscription(models.Model):
@@ -259,6 +255,12 @@ class Subscription(models.Model):
         verbose_name = _("subscription")
         verbose_name_plural = _("subscriptions")
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["user_id", "-created_at"],
+                name="idx_sub_user_id_created_at",
+            )
+        ]
 
     def __str__(self):
         return f"{self.id}"

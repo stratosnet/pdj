@@ -173,6 +173,11 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "werkzeug": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }
 

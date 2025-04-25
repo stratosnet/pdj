@@ -44,12 +44,15 @@ router = Router(auth=[OIDCBearer(), SessionAuth(csrf=False)], tags=["public"])
     response={200: MeSchema},
 )
 def me(request: HttpRequest):
-    # TODO: Fix
     subscriptions = Subscription.objects.select_related(
         "plan", "next_billing_plan"
     ).get_user_subscriptions(request.auth.pk)
-    request.auth.subscriptions.set(subscriptions)
-    return request.auth
+
+    return {
+        "email": request.auth.email,
+        "sub": request.auth.sub,
+        "subscriptions": subscriptions,
+    }
 
 
 @router.post(

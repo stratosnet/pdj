@@ -47,5 +47,6 @@ def subscriptions_list(
         Subscription.objects.select_related("user", "plan")
         .prefetch_related("user__sso_identities")
         .filter(q)
+        .get_user_subscriptions()
     )
     return qs

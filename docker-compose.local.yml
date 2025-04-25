@@ -12,7 +12,7 @@ services:
     tty: true
     volumes:
       - ./app:/app
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver_plus 0.0.0.0:8000 --print-sql
     # command: /bin/sh
     ports:
       - 9060:8000
