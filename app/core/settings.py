@@ -302,8 +302,17 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# timeout for payment providers links, should not be changed
+# in case of change, better to move controll to Processor model
+CACHE_PROCESSOR_URL_TIMEOUT = 60 * 60
 CACHES = {
-    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": env("DJANGO_REDIS_URL", default="redis://redis:6379/3"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    },
     "admin_interface": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "TIMEOUT": 60 * 5,

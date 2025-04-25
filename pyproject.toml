@@ -14,6 +14,7 @@ dependencies = [
     "django-environ>=0.12.0",
     "django-extensions>=3.2.3",
     "django-ninja>=1.4.0",
+    "django-redis>=5.4.0",
     "django-tinymce>=4.1.0",
     "faker>=37.1.0",
     "fief-client[fastapi]>=0.20.0",
