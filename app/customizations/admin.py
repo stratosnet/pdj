@@ -65,7 +65,7 @@ class EmailTemplateAdmin(admin.ModelAdmin):
                 )
                 return HttpResponseRedirect(redirect_url)
 
-            obj.send(request.user.email, get_test_context(request))
+            obj.send(request.user, get_test_context(request))
 
             self.message_user(
                 request, _(f"Test email has been sent to '{request.user.email}'")

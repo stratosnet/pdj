@@ -26,6 +26,7 @@ def get_test_context(request: HttpRequest):
     )
     sub = Subscription(
         user=request.user,
+        active_processor=processor,
         plan=plan,
         created_at=timezone.now(),
         end_at=None,
@@ -33,7 +34,6 @@ def get_test_context(request: HttpRequest):
     )
     invoice = Invoice(
         subscription=sub,
-        user=request.user,
         processor=processor,
         amount=plan.price,
         currency=settings.DEFAULT_CURRENCY,

@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import environ
+import json
 
 env = environ.Env(
     # set casting, default value
@@ -53,6 +54,7 @@ INSTALLED_APPS = [
     "colorfield",
     "django.contrib.admin",
     "tinymce",
+    "anymail",
     # local
     "accounts",
     "payments",
@@ -262,6 +264,8 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=25)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
+EMAIL_BACKEND_PARAMS_RAW = env("EMAIL_BACKEND_PARAMS", default="{}")
+ANYMAIL = json.loads(EMAIL_BACKEND_PARAMS_RAW or "{}")
 
 # pdj
 PDJ_TITLE_NAME = env("PDJ_TITLE_NAME", default="PDJ")

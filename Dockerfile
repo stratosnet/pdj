@@ -24,5 +24,3 @@ RUN if [ "$BUILD_LOCAL" = "true" ]; \
 COPY app/ /app/
 
 EXPOSE 8000
-
-CMD ["python", "manage.py", "0.0.0.0:8000"]
