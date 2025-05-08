@@ -68,15 +68,16 @@ This document describes the environment variables used in the project, along wit
 
 ## 📧 Email
 
-| Variable              | Default                                          | Description                                                                                                                                                  |
-| --------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DEFAULT_FROM_EMAIL`  | `webmaster@pdj.com`                              | Default email address for sending emails.                                                                                                                    |
-| `EMAIL_BACKEND`       | `django.core.mail.backends.console.EmailBackend` | Django backend used for email. See [Django Docs](https://docs.djangoproject.com/en/5.1/topics/email/#obtaining-an-instance-of-an-email-backend) for details. |
-| `EMAIL_HOST`          | `localhost`                                      | SMTP server host.                                                                                                                                            |
-| `EMAIL_PORT`          | `25`                                             | SMTP server port.                                                                                                                                            |
-| `EMAIL_HOST_USER`     | `""`                                             | SMTP login (can be empty).                                                                                                                                   |
-| `EMAIL_HOST_PASSWORD` | `""`                                             | SMTP password or API key.                                                                                                                                    |
-| `EMAIL_USE_TLS`       | `false`                                          | Use TLS encryption. Recommended: `true`.                                                                                                                     |
+| Variable               | Default                                          | Description                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_FROM_EMAIL`   | `webmaster@pdj.com`                              | Default sender email address used for outgoing emails.                                                                                                                      |
+| `EMAIL_BACKEND`        | `django.core.mail.backends.console.EmailBackend` | Django email backend. Use this for development (emails are printed to the console). See [Django Docs](https://docs.djangoproject.com/en/5.1/topics/email/#email-backends).  |
+| `EMAIL_BACKEND_PARAMS` | `{}`                                             | Additional parameters for the backend. Example: `{"SENDGRID_API_KEY": "<your-api-key>"}` with `EMAIL_BACKEND='anymail.backends.sendgrid.EmailBackend'` to use SendGrid API. |
+| `EMAIL_HOST`           | `localhost`                                      | Hostname of your SMTP server.                                                                                                                                               |
+| `EMAIL_PORT`           | `25`                                             | Port used by the SMTP server. Common ports: `25`, `465`, `587`.                                                                                                             |
+| `EMAIL_HOST_USER`      | `""`                                             | Username for SMTP authentication. Leave empty if not required.                                                                                                              |
+| `EMAIL_HOST_PASSWORD`  | `""`                                             | Password or API key for SMTP authentication.                                                                                                                                |
+| `EMAIL_USE_TLS`        | `false`                                          | Set to `true` to use TLS (Transport Layer Security). Recommended for production.                                                                                            |
 
 ---
 
