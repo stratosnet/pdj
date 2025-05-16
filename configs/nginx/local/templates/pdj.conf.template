@@ -34,12 +34,12 @@ server {
     }
 
     location /static/ {
-        alias /var/www/web/static/;
+        alias /var/www/pdj/static/;
         expires 7d;
     }
 
     location /media/ {
-        alias /var/www/web/media/;
+        alias /var/www/pdj/media/;
         expires 7d;
     }
 }

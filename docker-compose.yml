@@ -96,8 +96,8 @@ services:
       - 443:443
     volumes:
       - nginx_secrets:/etc/letsencrypt
-      - static_volume:/var/www/web/static
-      - media_volume:/var/www/web/media
+      - static_volume:/var/www/pdj/static
+      - media_volume:/var/www/pdj/media
       - ./configs/nginx/prod/templates:/etc/nginx/templates
     networks:
       - nginx_network
