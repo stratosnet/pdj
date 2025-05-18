@@ -1,6 +1,9 @@
 services:
   pdj_server:
-    image: dev1dor/pdj:1.0.1
+    build:
+      context: .
+      args:
+        - BUILD_LOCAL=true
     restart: always
     container_name: pdj_server
     command: gunicorn --access-logfile - --error-logfile - -b 0.0.0.0:8000 --workers 4 core.wsgi
@@ -21,7 +24,10 @@ services:
       options:
         max-size: "512m"
   pdj_worker:
-    image: dev1dor/pdj:1.0.1
+    build:
+      context: .
+      args:
+        - BUILD_LOCAL=true
     restart: always
     container_name: pdj_worker
     env_file:
@@ -39,7 +45,10 @@ services:
       options:
         max-size: "512m"
   pdj_beat:
-    image: dev1dor/pdj:1.0.1
+    build:
+      context: .
+      args:
+        - BUILD_LOCAL=true
     container_name: pdj_beat
     restart: always
     env_file:

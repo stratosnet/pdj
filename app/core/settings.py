@@ -14,12 +14,7 @@ from pathlib import Path
 import environ
 import json
 
-env = environ.Env(
-    # set casting, default value
-    DEBUG=(bool, False),
-    ALLOWED_HOSTS=(list, []),
-    DEBUG_TOOLBAR_ENABLED=(bool, False),
-)
+env = environ.Env()
 # reading .env file
 environ.Env.read_env()
 
@@ -34,9 +29,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env("DEBUG")
+DEBUG = env.bool("DEBUG")
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
+
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
 
 
 # Application definition
@@ -374,7 +371,7 @@ TINYMCE_DEFAULT_CONFIG = {
 }
 
 # django toolbar
-DEBUG_TOOLBAR_ENABLED = env("DEBUG_TOOLBAR_ENABLED")
+DEBUG_TOOLBAR_ENABLED = env.bool("DEBUG_TOOLBAR_ENABLED")
 if DEBUG_TOOLBAR_ENABLED:
     try:
         import debug_toolbar
