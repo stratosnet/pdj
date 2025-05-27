@@ -14,7 +14,7 @@ This document describes the environment variables used in the project, along wit
 | `CSRF_TRUSTED_ORIGINS`  | `[]`    | A list of trusted origins for unsafe requests (e.g. POST). Use `*` for all (not safe in production). |
 | `DEBUG_TOOLBAR_ENABLED` | –       | Enables Django Debug Toolbar if `true`.                                                              |
 | `SENTRY_DSN`            | –       | DSN for Sentry error reporting. Leave empty to disable.                                              |
-| `DEFAULT_CURRENCY`      | `"USD"` | Default currency used for transactions.                                                              |
+| `DEFAULT_CURRENCY`      | `USD` | Default currency used for transactions.                                                              |
 | `PDJ_TITLE_NAME`        | `PDJ`   | The service title displayed in templates and admin panel.                                            |
 
 ---
