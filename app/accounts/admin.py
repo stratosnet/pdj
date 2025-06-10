@@ -75,8 +75,7 @@ class ClientAdmin(admin.ModelAdmin):
         "client_id",
         "client_secret",
         "home_url",
-        "return_url",
-        "cancel_url",
+        "allowed_redirect_domains",
         "is_enabled",
         "created_at",
     ]

@@ -572,7 +572,11 @@ class Processor(models.Model):
         raise NotImplementedError("provider not set")
 
     def create_checkout_url(
-        self, custom_id: str, amount: Decimal, return_url: str, cancel_url: str
+        self,
+        custom_id: str,
+        amount: Decimal,
+        return_url: str | None,
+        cancel_url: str | None,
     ):
         provider = self.get_provider()
         payload = provider.generate_checkout_data(
@@ -584,7 +588,11 @@ class Processor(models.Model):
         return payload.get("url")
 
     def create_subscription_url(
-        self, custom_id: str, external_plan_id: str, return_url: str, cancel_url: str
+        self,
+        custom_id: str,
+        external_plan_id: str,
+        return_url: str | None,
+        cancel_url: str | None,
     ):
         provider = self.get_provider()
         payload = provider.generate_subscription_data(
@@ -599,8 +607,8 @@ class Processor(models.Model):
         self,
         external_subscription_id: str,
         external_plan_id: str,
-        return_url: str,
-        cancel_url: str,
+        return_url: str | None,
+        cancel_url: str | None,
     ):
         provider = self.get_provider()
         payload = provider.generate_change_subscription_data(

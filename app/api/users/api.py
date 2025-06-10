@@ -1,13 +1,14 @@
 import logging
-import uuid
 
 from django.http import HttpRequest
-from django.db import transaction
 from django.db.models import Q
 from django.core.cache import cache
 from django.conf import settings
 
+from pydantic import ValidationError as PydanticValidationError
 from ninja import Router, Header
+from ninja.errors import ValidationError, ValidationErrorContext
+from ninja.params.models import BodyModel
 
 from payments.models import (
     Plan,
@@ -15,9 +16,10 @@ from payments.models import (
     Processor,
     Subscription,
 )
-from payments.clients import PaymentClient
 from payments.serializers import ProcessorIDSerializer
-from customizations.context import get_subscription_context
+from core.utils import (
+    validate_schema_with_context,
+)
 
 from ..authenticators import (
     OIDCBearer,
@@ -69,6 +71,8 @@ def me_upgrade(
     data: UpgradePlanSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
+    data = validate_schema_with_context(router.api, request, UpgradePlanSchema, data)
+
     sub = Subscription.objects.select_related(
         "plan",
         "active_processor",
@@ -113,12 +117,8 @@ def me_upgrade(
         custom_id,
         amount,
         # TODO: Add arg to path for action upgrade
-        request.client.return_url,
-        (
-            request.client.cancel_url
-            if request.client.cancel_url
-            else request.client.return_url
-        ),
+        data.return_url,
+        (data.cancel_url if data.cancel_url else data.return_url),
     )
 
     if not url:
@@ -138,6 +138,8 @@ def me_subscribe(
     data: CheckoutSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
+    data = validate_schema_with_context(router.api, request, CheckoutSchema, data)
+
     try:
         plan = Plan.objects.get(id=data.plan_id, is_enabled=True)
     except Plan.DoesNotExist:
@@ -185,23 +187,15 @@ def me_subscribe(
             url = processor.create_subscription_url(
                 custom_id,
                 pr.external_id,
-                request.client.return_url,
-                (
-                    request.client.cancel_url
-                    if request.client.cancel_url
-                    else request.client.return_url
-                ),
+                data.return_url,
+                (data.cancel_url if data.cancel_url else data.return_url),
             )
         else:
             url = processor.create_checkout_url(
                 custom_id,
                 plan.price,
-                request.client.return_url,
-                (
-                    request.client.cancel_url
-                    if request.client.cancel_url
-                    else request.client.return_url
-                ),
+                data.return_url,
+                (data.cancel_url if data.cancel_url else data.return_url),
             )
 
         if not url:
@@ -309,6 +303,8 @@ def me_change_plan(
     data: UpgradePlanSchema,
     client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
 ):
+    data = validate_schema_with_context(router.api, request, UpgradePlanSchema, data)
+
     sub = Subscription.objects.select_related(
         "plan", "active_processor"
     ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
@@ -353,12 +349,8 @@ def me_change_plan(
             url = processor.create_change_plan_url(
                 sub.external_id,
                 proc_ref.external_id,
-                request.client.return_url,
-                (
-                    request.client.cancel_url
-                    if request.client.cancel_url
-                    else request.client.return_url
-                ),
+                data.return_url,
+                (data.cancel_url if data.cancel_url else data.return_url),
             )
             if url:
                 cache.set(cache_key, url, timeout=settings.CACHE_PROCESSOR_URL_TIMEOUT)
