@@ -68,19 +68,9 @@ class Client(models.Model):
         null=True,
         blank=True,
     )
-    return_url = models.URLField(
-        verbose_name=_("return URL"),
-        help_text=_(
-            "The URL of the product page where users are redirected after completing a payment."
-        ),
-        null=True,
-        blank=True,
-    )
-    cancel_url = models.URLField(
-        verbose_name=_("cancel URL"),
-        help_text=_(
-            "The URL of the product page where users are redirected if they cancel the payment. If not provided, the Return URL will be used."
-        ),
+    allowed_redirect_domains = models.TextField(
+        verbose_name="allowed redirect domains",
+        help_text="A newline-separated list of domains that are allowed for redirect URLs.",
         null=True,
         blank=True,
     )
@@ -100,11 +90,22 @@ class Client(models.Model):
     def __str__(self):
         return self.name
 
+    def get_allowed_redirect_domains(self):
+        if self.allowed_redirect_domains:
+            return [
+                domain.strip()
+                for domain in self.allowed_redirect_domains.split("\n")
+                if domain.strip()
+            ]
+        return []
+
     def clean(self):
         if not self.sku_prefix:
             self.sku_prefix = generate_sku_prefix()
         else:
             self.sku_prefix = self.sku_prefix.upper()
+
+        self.allowed_redirect_domains = self.allowed_redirect_domains.strip()
 
     @cached_property
     def product_id(self):

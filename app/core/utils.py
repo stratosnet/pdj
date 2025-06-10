@@ -3,11 +3,18 @@ import random
 import string
 import binascii
 import base64
+from typing import Any
 from urllib.parse import urljoin
 
 from django.conf import settings
 from django.utils import timezone
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+from django.http import HttpRequest
+
+from pydantic import ValidationError as PydanticValidationError
+from ninja import Schema, NinjaAPI
+from ninja.errors import ValidationErrorContext
+from ninja.params.models import BodyModel
 
 from .middleware import get_current_request
 
@@ -63,3 +70,17 @@ def get_value_from_timestamp_token(token):
     except (BadSignature, SignatureExpired):
         return "", False
     return value, True
+
+
+def validate_schema_with_context(
+    api: "NinjaAPI", request: HttpRequest, schema: Schema, data: Any
+) -> Schema:
+    try:
+        data = schema.model_validate(data, context={"request": request})
+        return data
+    except PydanticValidationError as exc:
+        error_contexts = [
+            ValidationErrorContext(pydantic_validation_error=exc, model=BodyModel())
+        ]
+        validation_error = api.validation_error_from_error_contexts(error_contexts)
+        raise validation_error
