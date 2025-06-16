@@ -3,6 +3,8 @@ from django.utils.translation import gettext_lazy as _
 
 from .models import (
     Plan,
+    Feature,
+    PlanFeature,
     Invoice,
     Subscription,
     PlanProcessorLink,
@@ -95,8 +97,13 @@ class ProcessorAdmin(admin.ModelAdmin):
     readonly_fields = ["id", "webhook_url"]
 
 
+class FeatureInline(admin.TabularInline):
+    model = Feature.plans.through
+
+
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
+    inlines = (FeatureInline,)
     list_display = [
         "name",
         "code",
@@ -111,6 +118,20 @@ class PlanAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("client")
+
+
+@admin.register(Feature)
+class FeatureAdmin(admin.ModelAdmin):
+    list_display = ["name", "description", "created_at"]
+
+
+@admin.register(PlanFeature)
+class PlanFeatureAdmin(admin.ModelAdmin):
+    list_display = ["id", "plan", "feature", "created_at"]
+    list_filter = ["plan__name", "feature__name"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("plan", "feature")
 
 
 @admin.register(PlanProcessorLink)
