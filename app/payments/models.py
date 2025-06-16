@@ -1,6 +1,6 @@
 import uuid
 from datetime import timedelta, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.validators import RegexValidator
 from django.db import models
@@ -167,6 +167,123 @@ class Plan(models.Model):
             "price": f"{self.price:.2f}",
             "is_recurring": self.is_recurring,
         }
+
+
+class Feature(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name=_("key"),
+        help_text=_("Unique identifier for the feature, used in code"),
+        validators=[
+            RegexValidator(
+                regex=r"^[a-z0-9_]+$",
+                message=_(
+                    "Key must contain only lowercase letters, numbers, or underscores (snake_case)"
+                ),
+            )
+        ],
+    )
+    name = models.CharField(
+        max_length=128, verbose_name=_("name"), help_text=_("Name of the feature")
+    )
+    description = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name=_("description"),
+        help_text=_("Description of a feature"),
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    plans = models.ManyToManyField(
+        "Plan",
+        through="PlanFeature",
+        through_fields=("feature", "plan"),
+        related_name="features",
+        verbose_name=_("plans"),
+        help_text=_("Plans that include this feature"),
+    )
+
+    class Meta:
+        verbose_name = _("feature")
+        verbose_name_plural = _("features")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class PlanFeature(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(
+        "Plan",
+        verbose_name=_("plan"),
+        related_name="plan_features",
+        on_delete=models.CASCADE,
+    )
+    feature = models.ForeignKey(
+        "Feature",
+        verbose_name=_("feature"),
+        related_name="plan_features",
+        on_delete=models.CASCADE,
+    )
+    value = models.CharField(
+        max_length=256,
+        verbose_name=_("value"),
+        help_text=_("Optional value for the feature (e.g., limit, quota)"),
+    )
+
+    def clean(self):
+        super().clean()
+
+        value = self.value.strip()
+
+        if "." not in value:
+            return
+
+        try:
+            dec = Decimal(value)
+        except InvalidOperation:
+            raise ValidationError({"value": _("Value must be a valid decimal number.")})
+
+        digits = dec.as_tuple().digits
+        exponent = dec.as_tuple().exponent
+
+        digits_count = len(digits)
+        decimal_places = abs(exponent) if exponent < 0 else 0
+
+        if digits_count > 16 or decimal_places > 2:
+            raise ValidationError(
+                {
+                    "value": _(
+                        "Decimal value must have at most 16 digits and 2 decimal places."
+                    )
+                }
+            )
+
+        self.value = str(dec)
+
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("plan feature")
+        verbose_name_plural = _("plan features")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["plan", "feature"],
+                name="unique_plan_feature",
+                violation_error_message=_(
+                    "This feature is already linked to the plan."
+                ),
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.plan.name} - {self.feature.name}"
 
 
 class SubscriptionQuerySet(models.QuerySet):

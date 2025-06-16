@@ -251,6 +251,9 @@ DEFAULT_CURRENCY = env.str("DEFAULT_CURRENCY", default="USD")
 NINJA_PAGINATION_PER_PAGE = 10
 NINJA_PAGINATION_MAX_LIMIT = 20
 
+# cookies
+SESSION_COOKIE_NAME = env.str("SESSION_COOKIE_NAME", default="pdj_sessionid")
+
 # email config
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="webmaster@pdj.com")
 EMAIL_BACKEND = env(

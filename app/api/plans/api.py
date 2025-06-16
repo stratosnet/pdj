@@ -49,6 +49,7 @@ def plans_list(
             queryset=PlanProcessorLink.objects.select_related("processor").filter(
                 processor__is_enabled=True
             ),
-        )
+        ),
+        "plan_features__feature",
     ).filter(q)
     return qs
