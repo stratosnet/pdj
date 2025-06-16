@@ -107,6 +107,7 @@ class PlanAdmin(admin.ModelAdmin):
     list_display = [
         "name",
         "code",
+        "position",
         "client",
         "duration",
         "price",
@@ -115,6 +116,7 @@ class PlanAdmin(admin.ModelAdmin):
         "is_enabled",
     ]
     list_filter = [ClientListFilter, "is_recurring", "is_enabled"]
+    ordering = ["-position"]
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("client")

@@ -43,13 +43,17 @@ def plans_list(
 ):
     q = Q(client=request.client, is_enabled=True)
     q &= filters.get_filter_expression()
-    qs = Plan.objects.prefetch_related(
-        Prefetch(
-            "links",
-            queryset=PlanProcessorLink.objects.select_related("processor").filter(
-                processor__is_enabled=True
+    qs = (
+        Plan.objects.prefetch_related(
+            Prefetch(
+                "links",
+                queryset=PlanProcessorLink.objects.select_related("processor").filter(
+                    processor__is_enabled=True
+                ),
             ),
-        ),
-        "plan_features__feature",
-    ).filter(q)
+            "plan_features__feature",
+        )
+        .order_by("-position")
+        .filter(q)
+    )
     return qs
