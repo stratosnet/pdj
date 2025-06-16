@@ -89,6 +89,11 @@ class Plan(models.Model):
             "Unique, machine-readable name for the plan (e.g., for syncing with external systems)"
         ),
     )
+    position = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("position"),
+        help_text=_("Position of the plan in the API list (lower is higher priority)"),
+    )
     description = models.TextField(
         null=True,
         blank=True,

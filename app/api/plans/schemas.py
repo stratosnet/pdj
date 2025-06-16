@@ -43,6 +43,7 @@ class PlanSchema(ModelSchema):
             "id",
             "name",
             "code",
+            "position",
             "description",
             "term",
             "price",
