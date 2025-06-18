@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.dispatch import Signal, receiver
 
 from customizations.models import EmailTemplate
+from customizations.tasks import notify_admins
 from customizations.context import get_subscription_context
 from .models import (
     Plan,
@@ -17,6 +18,7 @@ from .models import (
 from .exceptions import (
     SubscriptionNotFound,
     PlanNotFound,
+    PaymentNotFound,
 )
 
 
@@ -57,7 +59,7 @@ def on_payment_pending(
         external_id=external_sale_id,
         amount=amount,
         currency=currency,
-        status=Invoice.PENDING,
+        status=Invoice.Status.PENDING,
         created_at=created_at,
     )
 
@@ -91,11 +93,11 @@ def on_payment_completed(
         logger.warning(f"Invoice '{external_sale_id}' not found to proceed")
         return
 
-    if invoice.status == Invoice.SUCCESS:
+    if invoice.status == Invoice.Status.SUCCESS:
         logger.warning(f"Invoice '{external_sale_id}' has been proceed")
         return
 
-    invoice.status = Invoice.SUCCESS
+    invoice.status = Invoice.Status.SUCCESS
     invoice.save()
 
     # NOTE: Find a way to change next_billing_at time
@@ -134,7 +136,7 @@ def on_subscription_suspend(
             subscription=sub,
             processor=sub.active_processor,
             amount=sub.plan.price,
-            status=Invoice.SUCCESS,
+            status=Invoice.Status.SUCCESS,
         )
 
     context = get_subscription_context(latest_invoice)
@@ -178,7 +180,7 @@ def on_subscription_activate(
             processor=sub.active_processor,
             amount=amount,
             currency=currency,
-            status=Invoice.SUCCESS,
+            status=Invoice.Status.SUCCESS,
             updated_at=timezone.now(),
             created_at=timezone.now(),
         )
@@ -263,6 +265,40 @@ def on_checkout_approved(
     processor.approve_order(sub.external_id)
 
 
+payment_refunded = Signal()
+
+
+@receiver(payment_refunded)
+@transaction.atomic
+def on_payment_refunded(
+    subscription_id: str,
+    **kwargs,
+):
+    try:
+        sub = Subscription.objects.select_related(
+            "user",
+            "plan",
+            "active_processor",
+        ).get(id=subscription_id)
+    except Subscription.DoesNotExist:
+        raise SubscriptionNotFound(f"Subscription '{subscription_id}' not found")
+
+    sub.finish(timezone.now())
+
+    latest_invoice = sub.invoices.order_by("-created_at").first()
+    if not latest_invoice:
+        raise PaymentNotFound(f"Payment for subscription '{subscription_id}' not found")
+
+    latest_invoice.status = Invoice.Status.REFUNDED
+    latest_invoice.save(update_fields=["status", "updated_at"])
+    logger.warning(f"Payment for subscription '{subscription_id}' has been refunded")
+    # Notify admins about the refund
+    notify_admins.delay(
+        subject=f"Payment refunded for subscription {subscription_id}",
+        message=f"Subscription ID: {subscription_id}",
+    )
+
+
 checkout_completed = Signal()
 
 
@@ -302,5 +338,5 @@ def on_checkout_completed(
         subscription=sub,
         processor=sub.active_processor,
         amount=sub.plan.price,  # TODO: Get amount and currency from request
-        status=Invoice.SUCCESS,
+        status=Invoice.Status.SUCCESS,
     )

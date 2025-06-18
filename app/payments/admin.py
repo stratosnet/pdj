@@ -1,5 +1,8 @@
 from django.contrib import admin
+from django.db.models import JSONField
 from django.utils.translation import gettext_lazy as _
+from django.contrib import messages
+from django_json_widget.widgets import JSONEditorWidget
 
 from .models import (
     Plan,
@@ -9,6 +12,7 @@ from .models import (
     Subscription,
     PlanProcessorLink,
     Processor,
+    WebhookEvent,
 )
 from .filters import ClientListFilter
 
@@ -73,6 +77,53 @@ class InvoiceAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(WebhookEvent)
+class WebhookEventAdmin(admin.ModelAdmin):
+    formfield_overrides = {
+        JSONField: {"widget": JSONEditorWidget(options={"mode": "code"})},
+    }
+
+    list_display = [
+        "id",
+        "processor",
+        "event_type",
+        "event_id",
+        "is_processed",
+        "created_at",
+    ]
+    fields = [
+        "processor",
+        "is_processed",
+        "event_type",
+        "event_id",
+        "payload",
+        "created_at",
+    ]
+    list_filter = ["processor__type", "event_type"]
+    readonly_fields = [
+        "processor",
+        "is_processed",
+        "event_type",
+        "event_id",
+        "created_at",
+    ]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("processor")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        messages.error(request, _("Webhook events cannot be modified."))
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["show_save_and_continue"] = False
+        extra_context["show_save"] = False
+        return super().changeform_view(request, object_id, form_url, extra_context)
 
 
 @admin.register(Processor)

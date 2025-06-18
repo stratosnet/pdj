@@ -6,17 +6,18 @@ This document describes the environment variables used in the project, along wit
 
 ## 🛠 General
 
-| Variable                | Default         | Description                                                                                                   |
-| ----------------------- | --------------- | ------------------------------------------------------------------------------------------------------------- |
-| `DEBUG`                 | `false`         | Enables Django debug mode (should be `false` in production).                                                  |
-| `SECRET_KEY`            | –               | Django's secret key for cryptographic signing. Keep it secure.                                                |
-| `ALLOWED_HOSTS`         | `[]`            | Comma-separated list of allowed hosts. Use `*` for all (not safe in production).                              |
-| `CSRF_TRUSTED_ORIGINS`  | `[]`            | A list of trusted origins for unsafe requests (e.g. POST). Use `*` for all (not safe in production).          |
-| `DEBUG_TOOLBAR_ENABLED` | –               | Enables Django Debug Toolbar if `true`.                                                                       |
-| `SENTRY_DSN`            | –               | DSN for Sentry error reporting. Leave empty to disable.                                                       |
-| `DEFAULT_CURRENCY`      | `USD`           | Default currency used for transactions.                                                                       |
-| `PDJ_TITLE_NAME`        | `PDJ`           | The service title displayed in templates and admin panel.                                                     |
-| `SESSION_COOKIE_NAME`   | `pdj_sessionid` | Name of the cookie used to store the session ID. Change this if you want to use a custom session cookie name. |
+| Variable                | Default         | Description                                                                                                                                             |
+| ----------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEBUG`                 | `false`         | Enables Django debug mode (should be `false` in production).                                                                                            |
+| `SECRET_KEY`            | –               | Django's secret key for cryptographic signing. Keep it secure.                                                                                          |
+| `ALLOWED_HOSTS`         | `""`            | Comma-separated list of allowed hosts. Use `*` for all (not safe in production).                                                                        |
+| `CSRF_TRUSTED_ORIGINS`  | `""`            | A list of trusted origins for unsafe requests (e.g. POST). Use `*` for all (not safe in production).                                                    |
+| `DEBUG_TOOLBAR_ENABLED` | –               | Enables Django Debug Toolbar if `true`.                                                                                                                 |
+| `SENTRY_DSN`            | –               | DSN for Sentry error reporting. Leave empty to disable.                                                                                                 |
+| `DEFAULT_CURRENCY`      | `USD`           | Default currency used for transactions.                                                                                                                 |
+| `PDJ_TITLE_NAME`        | `PDJ`           | The service title displayed in templates and admin panel.                                                                                               |
+| `SESSION_COOKIE_NAME`   | `pdj_sessionid` | Name of the cookie used to store the session ID. Change this if you want to use a custom session cookie name.                                           |
+| `ADMINS`                | `""`            | Comma-separated list of Django admins in the format `Name:email,Name2:email2`. When `DEBUG=False`, Django will email these addresses about code errors. |
 
 ## 🗄 Database
 

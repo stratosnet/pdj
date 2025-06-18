@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "django.contrib.admin",
     "tinymce",
     "anymail",
+    "django_json_widget",
     # local
     "accounts",
     "payments",
@@ -267,6 +268,16 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
 EMAIL_BACKEND_PARAMS_RAW = env("EMAIL_BACKEND_PARAMS", default="{}")
 ANYMAIL = json.loads(EMAIL_BACKEND_PARAMS_RAW or "{}")
 
+
+def _prepare_admins(femail):
+    if ":" in femail:
+        full_name, email = femail.split(":")
+        return (full_name.strip(), email.strip())
+    return ("Admin", femail.strip())
+
+
+ADMINS = [_prepare_admins(femail) for femail in env.list("ADMINS", default=[])]
+
 # pdj
 PDJ_TITLE_NAME = env("PDJ_TITLE_NAME", default="PDJ")
 PDJ_MAIN_USER_EMAIL = env("PDJ_MAIN_USER_EMAIL")
@@ -308,7 +319,7 @@ CELERY_BEAT_SCHEDULE = {
 
 # timeout for payment providers links, should not be changed
 # in case of change, better to move controll to Processor model
-CACHE_PROCESSOR_URL_TIMEOUT = 60 * 60
+CACHE_PROCESSOR_URL_TIMEOUT = 5 * 60
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",

@@ -74,7 +74,9 @@ def sync_products():
 
     clients = Client.objects.filter(is_enabled=True)
     for client in clients:
-        processors = Processor.objects.filter(is_enabled=True, type=Processor.PAYPAL)
+        processors = Processor.objects.filter(
+            is_enabled=True, type=Processor.Type.PAYPAL
+        )
         for processor in processors:
             paypal_client = PayPalClient(
                 processor.client_id, processor.secret, processor.is_sandbox
@@ -102,7 +104,9 @@ def sync_plans():
 
     for plan in plans:
         client = plan.client
-        processors = Processor.objects.filter(is_enabled=True, type=Processor.PAYPAL)
+        processors = Processor.objects.filter(
+            is_enabled=True, type=Processor.Type.PAYPAL
+        )
         for processor in processors:
             if not plan.is_recurring:
                 plan.links.get_or_create(processor=processor)
