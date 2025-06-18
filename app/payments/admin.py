@@ -107,16 +107,17 @@ class PlanAdmin(admin.ModelAdmin):
     list_display = [
         "name",
         "code",
-        "position",
         "client",
         "duration",
         "price",
-        "is_recurring",
         "created_at",
+        "is_recurring",
         "is_enabled",
+        "is_default",
+        "position",
     ]
     list_filter = [ClientListFilter, "is_recurring", "is_enabled"]
-    ordering = ["-position"]
+    ordering = ["position"]
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("client")

@@ -96,7 +96,9 @@ def sync_products():
 
 @shared_task()
 def sync_plans():
-    plans = Plan.objects.select_related("client").filter(client__is_enabled=True)
+    plans = Plan.objects.select_related("client").filter(
+        client__is_enabled=True, is_default=False
+    )
 
     for plan in plans:
         client = plan.client
