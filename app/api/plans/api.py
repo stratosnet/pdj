@@ -53,7 +53,7 @@ def plans_list(
             ),
             "plan_features__feature",
         )
-        .order_by("-position")
+        .order_by("position")
         .filter(q)
     )
     return qs

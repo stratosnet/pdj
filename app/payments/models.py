@@ -71,6 +71,11 @@ class Plan(models.Model):
     name = models.CharField(
         max_length=128, verbose_name=_("name"), help_text=_("Name of the plan")
     )
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name=_("is default"),
+        help_text=_("Whether this plan is the default for the client"),
+    )
     code = models.CharField(
         max_length=128,
         unique=True,
@@ -90,7 +95,8 @@ class Plan(models.Model):
         ),
     )
     position = models.PositiveIntegerField(
-        default=0,
+        null=True,
+        blank=True,
         verbose_name=_("position"),
         help_text=_("Position of the plan in the API list (lower is higher priority)"),
     )
@@ -143,12 +149,27 @@ class Plan(models.Model):
     def __str__(self):
         return f"{self.name} (price: {self.price})"
 
+    def clean(self):
+        super().clean()
+
+        if self.is_default:
+            qs = Plan.objects.filter(client=self.client, is_default=True)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.exists():
+                raise ValidationError(_("Only one default plan is allowed per client."))
+
+        if self.price == 0 and not self.is_default:
+            raise ValidationError(_("Price must be a positive number."))
+
     @property
     @admin.display(
         ordering="period",
         description=_("Billing frequency"),
     )
     def duration(self):
+        if self.is_default:
+            return "-"
         period_name = self.get_period_display().lower()
         if self.term == 1:
             return _("Billed every %(period_name)s") % {"period_name": period_name}
