@@ -8,7 +8,7 @@ class ProcessorInitializer:
         if not Processor.objects.first():
             if settings.PDJ_PAYPAL_CLIENT_ID and settings.PDJ_PAYPAL_CLIENT_SECRET:
                 Processor.objects.create(
-                    type=Processor.PAYPAL,
+                    type=Processor.Type.PAYPAL,
                     client_id=settings.PDJ_PAYPAL_CLIENT_ID,
                     secret=settings.PDJ_PAYPAL_CLIENT_SECRET,
                     endpoint_secret=settings.PDJ_PAYPAL_ENDPOINT_SECRET,

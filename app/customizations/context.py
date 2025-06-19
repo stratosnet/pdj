@@ -16,13 +16,13 @@ def get_test_context(request: HttpRequest):
     plan = Plan(
         client=client,
         name="Test plan",
-        period=Plan.MONTH,
+        period=Plan.Period.MONTH,
         term=1,
         price=10,
         is_recurring=True,
     )
     processor = Processor(
-        type=Processor.PAYPAL,
+        type=Processor.Type.PAYPAL,
     )
     sub = Subscription(
         user=request.user,

@@ -1,14 +1,10 @@
 import logging
 
 from django.http import HttpRequest
+from django.db import transaction
 from django.db.models import Q
-from django.core.cache import cache
-from django.conf import settings
 
-from pydantic import ValidationError as PydanticValidationError
 from ninja import Router, Header
-from ninja.errors import ValidationError, ValidationErrorContext
-from ninja.params.models import BodyModel
 
 from payments.models import (
     Plan,
@@ -141,12 +137,14 @@ def me_subscribe(
     data = validate_schema_with_context(router.api, request, CheckoutSchema, data)
 
     try:
-        plan = Plan.objects.get(id=data.plan_id, is_enabled=True)
+        plan = Plan.objects.get(id=data.plan_id, is_enabled=True, client=request.client)
     except Plan.DoesNotExist:
         return 400, {"message": "Plan not found"}
 
     sub = Subscription.objects.latest_for_user_and_client(
-        user_id=request.auth.pk, client_id=request.client.pk
+        user_id=request.auth.pk,
+        client_id=request.client.pk,
+        include_uninitialized=True,
     )
     if sub:
         match True:
@@ -172,17 +170,9 @@ def me_subscribe(
 
     processor: Processor = pr.processor
 
-    cache_key = (
-        f"subscribe:plan:{plan.id}:processor:{processor.id}:user{request.auth.id}"
-    )
-    lock_key = f"lock:{cache_key}"
+    custom_id = ProcessorIDSerializer.serialize_subscription()
 
-    with cache.lock(lock_key):
-        url = cache.get(cache_key)
-        if url:
-            return {"url": url}
-
-        custom_id = ProcessorIDSerializer.serialize_subscription()
+    def create_url():
         if plan.is_recurring:
             url = processor.create_subscription_url(
                 custom_id,
@@ -197,18 +187,23 @@ def me_subscribe(
                 data.return_url,
                 (data.cancel_url if data.cancel_url else data.return_url),
             )
+        return url
 
-        if not url:
-            return 400, {"message": "No payment link"}
-
-        cache.set(cache_key, url, timeout=settings.CACHE_PROCESSOR_URL_TIMEOUT)
+    # cache_key = ProcessorIDSerializer.get_cache_key(
+    #     "subscribe", plan.id, processor.id, request.auth.id
+    # )
+    # url = ProcessorIDSerializer.get_or_create_url(cache_key, create_url)
+    url = create_url()
+    if not url:
+        return 400, {"message": "No payment link"}
 
     _, subscription_id = ProcessorIDSerializer.deserialize(custom_id)
-    if sub and sub.is_null:
-        sub.id = subscription_id  # override id because of new payment link
-        sub.save(update_fields=["id"])
-    else:
-        sub = Subscription.objects.create(
+    with transaction.atomic():
+        print(f"{sub=}")
+        if sub and sub.is_null:
+            # Delete the old null subscription and create a new one with the correct id
+            sub.delete()
+        Subscription.objects.create(
             id=subscription_id,
             user=request.auth,
             plan=plan,
@@ -337,23 +332,23 @@ def me_change_plan(
     # NOTE: If another provider will be added, we should add more logic here to create a correct switch
     # or user always same provider
     proc_ref = next_plan.links.filter(processor=processor).first()
+    if not proc_ref or not proc_ref.external_id:
+        return 400, {"message": "Payment method for new plan not found"}
 
-    cache_key = (
-        f"changeplan:plan:{next_plan.id}:processor:{processor.id}:user{request.auth.id}"
-    )
-    lock_key = f"lock:{cache_key}"
+    def create_url():
+        return processor.create_change_plan_url(
+            sub.external_id,
+            proc_ref.external_id,
+            data.return_url,
+            (data.cancel_url if data.cancel_url else data.return_url),
+        )
 
-    with cache.lock(lock_key):
-        url = cache.get(cache_key)
-        if not url:
-            url = processor.create_change_plan_url(
-                sub.external_id,
-                proc_ref.external_id,
-                data.return_url,
-                (data.cancel_url if data.cancel_url else data.return_url),
-            )
-            if url:
-                cache.set(cache_key, url, timeout=settings.CACHE_PROCESSOR_URL_TIMEOUT)
+    # cache_key = ProcessorIDSerializer.get_cache_key(
+    #     "changeplan", next_plan.id, processor.id, request.auth.id
+    # )
+
+    # url = ProcessorIDSerializer.get_or_create_url(cache_key, create_url)
+    url = create_url()
     if not url:
         return 400, {"message": "Subscription could not be changed"}
 

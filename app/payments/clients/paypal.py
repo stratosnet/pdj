@@ -292,6 +292,12 @@ class OriginalPayPalClient:
         url = f"{self.base_url}/v2/checkout/orders/{id}/capture"
         self._make_request(url=url, method="POST", json=data, headers=self.headers)
 
+    def refund_payment_for_capture(self, id: str) -> None:
+        data = {}
+
+        url = f"{self.base_url}/v2/payments/captures/{id}/refund"
+        self._make_request(url=url, method="POST", json=data, headers=self.headers)
+
 
 class PayPalClient(PaymentClient, OriginalPayPalClient):
 
@@ -392,3 +398,6 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
 
     def approve_order(self, id: str):
         self.capture_payment_for_order(id)
+
+    def refund_payment(self, id: str):
+        self.refund_payment_for_capture(id)

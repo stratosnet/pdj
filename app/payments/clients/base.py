@@ -44,3 +44,7 @@ class PaymentClient(ABC):
     @abstractmethod
     def approve_order(self, id: str):
         pass
+
+    @abstractmethod
+    def refund_payment(self, id: str):
+        pass

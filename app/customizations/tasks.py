@@ -1,14 +1,25 @@
 import json
+import smtplib
 
 from django.conf import settings
 from django.utils.translation import gettext as _
-from django.core.mail import send_mail
+from django.core.mail import send_mail, mail_admins
 
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
 
 logger = get_task_logger(__name__)
+
+
+@shared_task(exceptions=(smtplib.SMTPException,), retry_backoff=True)
+def notify_admins(subject: str, message: str):
+    mail_admins(
+        subject=_(f"[ADMIN] Notification from {settings.PDJ_TITLE_NAME}: ") + subject,
+        message=message,
+        fail_silently=False,
+    )
+    logger.info(f"Admins notified with subject: {subject}")
 
 
 @shared_task()

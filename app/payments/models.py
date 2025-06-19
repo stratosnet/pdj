@@ -48,17 +48,12 @@ class PlanProcessorLink(models.Model):
 
 
 class Plan(models.Model):
-    DAY = 1
-    WEEK = 2
-    MONTH = 3
-    YEAR = 4
 
-    PERIODS = (
-        (DAY, "DAY"),
-        (WEEK, "WEEK"),
-        (MONTH, "MONTH"),
-        (YEAR, "YEAR"),
-    )
+    class Period(models.IntegerChoices):
+        DAY = 1, "DAY"
+        WEEK = 2, "WEEK"
+        MONTH = 3, "MONTH"
+        YEAR = 4, "YEAR"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     client = models.ForeignKey(
@@ -107,7 +102,7 @@ class Plan(models.Model):
         help_text=_("Description of a plan"),
     )
     period = models.PositiveIntegerField(
-        choices=PERIODS,
+        choices=Period.choices,
         verbose_name=_("period"),
         help_text=_("Billing period duration type"),
     )
@@ -327,26 +322,25 @@ class SubscriptionQuerySet(models.QuerySet):
         self,
         user_id: int,
         client_id: int,
+        *,
+        include_uninitialized: bool = True,
     ):
-        return self.filter(
+        q = Q(
             user_id=user_id,
             plan__client_id=client_id,
-            start_at__isnull=False,
-        ).first()
+        )
+        if include_uninitialized:
+            q |= Q(start_at__isnull=True)
+        return self.filter(q).first()
 
 
 class Subscription(models.Model):
-    NULL = 0
-    ACTIVATED = 1
-    SUSPENDED = 2
-    EXPIRED = 3
 
-    STATUSES = (
-        (NULL, "NULL"),
-        (ACTIVATED, "ACTIVE"),
-        (SUSPENDED, "SUSPENDED"),
-        (EXPIRED, "EXPIRED"),
-    )
+    class Status(models.IntegerChoices):
+        NULL = 0, "NULL"
+        ACTIVATED = 1, "ACTIVE"
+        SUSPENDED = 2, "SUSPENDED"
+        EXPIRED = 3, "EXPIRED"
 
     # for PayPal is a custom id
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -414,22 +408,22 @@ class Subscription(models.Model):
     )
     def status(self):
         if not self.start_at:
-            return self.NULL
+            return self.Status.NULL
 
         if self.suspended_at:
-            return self.SUSPENDED
+            return self.Status.SUSPENDED
 
         now = timezone.now()
 
         if self.start_at < now and (
             (self.end_at and now < self.end_at) or not self.end_at
         ):
-            return self.ACTIVATED
+            return self.Status.ACTIVATED
 
-        return self.EXPIRED
+        return self.Status.EXPIRED
 
     def get_status_display(self):
-        return dict(self.STATUSES)[self.status]
+        return dict([(e.value, e.name) for e in Subscription.Status])[self.status]
 
     @property
     @admin.display(
@@ -438,19 +432,19 @@ class Subscription(models.Model):
     def admin_status_with_color(self):
         # status = self.status
         match (self.status):
-            case self.NULL:
+            case self.Status.NULL:
                 return mark_safe(
                     f"<b style='color:red;'>{self.get_status_display()}</b>"
                 )
-            case self.SUSPENDED:
+            case self.Status.SUSPENDED:
                 return mark_safe(
                     f"<b style='color:orange;'>{self.get_status_display()}</b>"
                 )
-            case self.ACTIVATED:
+            case self.Status.ACTIVATED:
                 return mark_safe(
                     f"<b style='color:green;'>{self.get_status_display()}</b>"
                 )
-            case self.EXPIRED:
+            case self.Status.EXPIRED:
                 return mark_safe(
                     f"<b style='color:red;'>{self.get_status_display()}</b>"
                 )
@@ -458,22 +452,22 @@ class Subscription(models.Model):
     @property
     @admin.display(description=_("is null"), boolean=True)
     def is_null(self):
-        return self.status == self.NULL
+        return self.status == self.Status.NULL
 
     @property
     @admin.display(description=_("is active"), boolean=True)
     def is_active(self):
-        return self.status == self.ACTIVATED
+        return self.status == self.Status.ACTIVATED
 
     @property
     @admin.display(description=_("is suspended"), boolean=True)
     def is_suspended(self):
-        return self.status == self.SUSPENDED
+        return self.status == self.Status.SUSPENDED
 
     @property
     @admin.display(description=_("is expired"), boolean=True)
     def is_expired(self):
-        return self.status == self.EXPIRED
+        return self.status == self.Status.EXPIRED
 
     @cached_property
     @admin.display(
@@ -515,13 +509,13 @@ class Subscription(models.Model):
 
     def get_next_end_date(self):
         match self.plan.period:
-            case self.plan.DAY:
+            case Plan.Period.DAY:
                 return self.start_at + timedelta(days=1 * self.plan.term)
-            case self.plan.WEEK:
+            case Plan.Period.WEEK:
                 return self.start_at + timedelta(days=7 * self.plan.term)
-            case self.plan.MONTH:
+            case Plan.Period.MONTH:
                 return self.start_at + timedelta(days=30 * self.plan.term)
-            case self.plan.YEAR:
+            case Plan.Period.YEAR:
                 return self.start_at + timedelta(days=365 * self.plan.term)
 
     def calculate_upgrade_amount(self, upgrade_plan: Plan) -> Decimal:
@@ -539,19 +533,13 @@ class Subscription(models.Model):
 
 class Invoice(models.Model):
 
-    PENDING = 1
-    CANCELED = 2
-    SUCCESS = 3
-    FAILURE = 4
-    EXPIRED = 5
-
-    STATUSES = (
-        (PENDING, _("Pending")),
-        (CANCELED, _("Canceled")),
-        (SUCCESS, _("Success")),
-        (FAILURE, _("Failure")),
-        (EXPIRED, _("Expired")),
-    )
+    class Status(models.IntegerChoices):
+        PENDING = 1, _("Pending")
+        CANCELED = 2, _("Canceled")
+        SUCCESS = 3, _("Success")
+        FAILURE = 4, _("Failure")
+        EXPIRED = 5, _("Expired")
+        REFUNDED = 6, _("Refunded")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     subscription = models.ForeignKey(
@@ -578,7 +566,9 @@ class Invoice(models.Model):
     currency = models.CharField(
         _("currency"), max_length=3, default=settings.DEFAULT_CURRENCY
     )
-    status = models.PositiveIntegerField(_("status"), choices=STATUSES, default=PENDING)
+    status = models.PositiveIntegerField(
+        _("status"), choices=Status.choices, default=Status.PENDING
+    )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
@@ -604,15 +594,55 @@ class Invoice(models.Model):
         }
 
 
-class Processor(models.Model):
-    PAYPAL = "paypal"
+class WebhookEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    processor = models.ForeignKey(
+        "Processor",
+        verbose_name=_("processor"),
+        related_name="webhook_events",
+        on_delete=models.CASCADE,
+    )
+    event_type = models.CharField(
+        _("event type"),
+        max_length=128,
+        help_text=_("Type of the webhook event (e.g., payment.completed)"),
+    )
+    event_id = models.CharField(_("event id"), max_length=128)
+    created_at = models.DateTimeField(
+        _("created at"), auto_now_add=True, help_text=_("Date and time of the event")
+    )
+    payload = models.JSONField(
+        _("payload"),
+        help_text=_("The JSON payload of the webhook event"),
+    )
+    is_processed = models.BooleanField(
+        default=False,
+        verbose_name=_("is processed"),
+        help_text=_("Indicates if the webhook event has been processed"),
+    )
 
-    TYPES = ((PAYPAL, _("PayPal")),)
+    class Meta:
+        verbose_name = _("webhook event")
+        verbose_name_plural = _("webhook events")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["processor", "event_type", "event_id"],
+                name="unique_webhook_event",
+                violation_error_message=_("This event has already been processed."),
+            )
+        ]
+
+
+class Processor(models.Model):
+
+    class Type(models.TextChoices):
+        PAYPAL = "paypal", _("PayPal")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(
         max_length=20,
-        choices=TYPES,
+        choices=Type.choices,
         verbose_name=_("processor type"),
         help_text=_("The payment processor type"),
     )
@@ -705,7 +735,7 @@ class Processor(models.Model):
         return mask_secret(self.secret)
 
     def get_provider(self) -> PaymentClient:
-        if self.type == Processor.PAYPAL:
+        if self.type == Processor.Type.PAYPAL:
             return PayPalClient(
                 client_id=self.client_id,
                 client_secret=self.secret,
@@ -788,6 +818,10 @@ class Processor(models.Model):
     def approve_order(self, external_order_id: str):
         provider = self.get_provider()
         provider.approve_order(external_order_id)
+
+    def refund_payment(self, external_payment_id: str):
+        provider = self.get_provider()
+        provider.refund_payment(external_payment_id)
 
     @cached_property
     def context(self):
