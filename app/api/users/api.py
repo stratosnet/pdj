@@ -199,7 +199,6 @@ def me_subscribe(
 
     _, subscription_id = ProcessorIDSerializer.deserialize(custom_id)
     with transaction.atomic():
-        print(f"{sub=}")
         if sub and sub.is_null:
             # Delete the old null subscription and create a new one with the correct id
             sub.delete()

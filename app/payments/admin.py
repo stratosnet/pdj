@@ -2,6 +2,10 @@ from django.contrib import admin
 from django.db.models import JSONField
 from django.utils.translation import gettext_lazy as _
 from django.contrib import messages
+from django.contrib.admin.templatetags.admin_urls import add_preserved_filters
+from django.utils.html import format_html
+from django.http import HttpResponseRedirect
+from urllib.parse import quote as urlquote
 from django_json_widget.widgets import JSONEditorWidget
 
 from .models import (
@@ -148,13 +152,23 @@ class ProcessorAdmin(admin.ModelAdmin):
     readonly_fields = ["id", "webhook_url"]
 
 
+class ProcessorInline(admin.TabularInline):
+    model = Plan.processors.through
+    fields = ["processor", "external_id", "synced_at"]
+    readonly_fields = ["external_id", "synced_at"]
+
+
 class FeatureInline(admin.TabularInline):
     model = Feature.plans.through
 
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
-    inlines = (FeatureInline,)
+    change_form_template = "admin/payments/plan/change_form.html"
+    inlines = (
+        ProcessorInline,
+        FeatureInline,
+    )
     list_display = [
         "name",
         "code",
@@ -170,8 +184,48 @@ class PlanAdmin(admin.ModelAdmin):
     list_filter = [ClientListFilter, "is_recurring", "is_enabled"]
     ordering = ["position"]
 
+    def get_readonly_fields(self, request, obj=...):
+        readonly_fields = super().get_readonly_fields(request, obj)
+        if obj and obj.pk:
+            return readonly_fields + ("is_recurring",)
+        return readonly_fields
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("client")
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        return super().change_view(
+            request, object_id, form_url, extra_context=extra_context
+        )
+
+    def response_change(self, request, obj):
+        opts = self.opts
+        preserved_filters = self.get_preserved_filters(request)
+        preserved_qsl = self._get_preserved_qsl(request, preserved_filters)
+
+        msg_dict = {
+            "name": opts.verbose_name,
+            "obj": format_html('<a href="{}">{}</a>', urlquote(request.path), obj),
+        }
+        if "_syncprocessorlink" in request.POST:
+            obj.sync_processor_links()
+            msg = format_html(
+                _("Sync job added for {name} “{obj}”"),
+                **msg_dict,
+            )
+            self.message_user(request, msg, messages.SUCCESS)
+            redirect_url = request.path
+            redirect_url = add_preserved_filters(
+                {
+                    "preserved_filters": preserved_filters,
+                    "preserved_qsl": preserved_qsl,
+                    "opts": opts,
+                },
+                redirect_url,
+            )
+            return HttpResponseRedirect(redirect_url)
+        return super().response_change(request, obj)
 
 
 @admin.register(Feature)

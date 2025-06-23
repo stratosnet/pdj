@@ -40,11 +40,27 @@ class PlanProcessorLink(models.Model):
         _("external_id"), max_length=128, unique=True, null=True, blank=True
     )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+    synced_at = models.DateTimeField(
+        _("synced at"),
+        null=True,
+        blank=True,
+        help_text=_("Date and time when the link was last synced with the processor"),
+    )
 
     class Meta:
         verbose_name = _("plan processor link")
         verbose_name_plural = _("plan processor links")
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["plan", "processor"],
+                name="unique_plan_processor_link",
+                violation_error_message=_(
+                    "This processor is already linked to the plan."
+                ),
+            )
+        ]
 
 
 class Plan(models.Model):
@@ -119,6 +135,7 @@ class Plan(models.Model):
             "Number of periods for the subscription (e.g., if period is MONTH and term is 2, the subscription lasts 2 months)."
         ),
     )
+    # TODO: Add disabled
     is_recurring = models.BooleanField(
         default=True,
         verbose_name=_("is recurring"),
@@ -136,6 +153,15 @@ class Plan(models.Model):
     )
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
+    processors = models.ManyToManyField(
+        "Processor",
+        through="PlanProcessorLink",
+        through_fields=("plan", "processor"),
+        related_name="plans",
+        verbose_name=_("processors"),
+        help_text=_("Payment processors linked to this plan"),
+    )
+
     class Meta:
         verbose_name = _("plan")
         verbose_name_plural = _("plans")
@@ -143,6 +169,11 @@ class Plan(models.Model):
 
     def __str__(self):
         return f"{self.name} (price: {self.price})"
+
+    def sync_processor_links(self):
+        from .tasks.paypal import sync_plan
+
+        sync_plan.delay(str(self.id))
 
     def clean(self):
         super().clean()

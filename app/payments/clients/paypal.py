@@ -43,7 +43,11 @@ class OriginalPayPalClient:
     ) -> Response:
         response = requests.request(method, url, **kwargs)
         if raise_on_code:
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"PayPal request failed: {e.response.text}")
+                raise e
         return response
 
     def _get_access_token(self) -> str:
@@ -174,6 +178,45 @@ class OriginalPayPalClient:
         return self._make_request(
             url=url, method="POST", json=data, headers=self.headers
         ).json()
+
+    def update_subscription_plan(self, id: str, name: str, description: str) -> None:
+        data = [
+            {
+                "op": "replace",
+                "path": "/name",
+                "value": name,
+            },
+            {
+                "op": "replace",
+                "path": "/description",
+                "value": description,
+            },
+        ]
+        url = f"{self.base_url}/v1/billing/plans/{id}"
+        return self._make_request(
+            url=url, method="PATCH", json=data, headers=self.headers
+        )
+
+    def update_pricing_plan(
+        self,
+        id: str,
+        price: str,
+        currency: str = "USD",
+    ) -> None:
+        data = {
+            "pricing_schemes": [
+                {
+                    "billing_cycle_sequence": 1,
+                    "pricing_scheme": {
+                        "fixed_price": {"value": price, "currency_code": currency}
+                    },
+                }
+            ]
+        }
+        url = f"{self.base_url}/v1/billing/plans/{id}/update-pricing-schemes"
+        return self._make_request(
+            url=url, method="POST", json=data, headers=self.headers
+        )
 
     def list_subscription_plan(
         self, product_id: str, page_size=10, page=1, total_required=False
