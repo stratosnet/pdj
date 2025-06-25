@@ -305,11 +305,6 @@ CELERY_TASK_ACKS_LATE = False
 CELERY_IGNORE_RESULT = True
 
 CELERY_BEAT_SCHEDULE = {
-    "paypal-sync-plans": {
-        "task": "payments.tasks.paypal.sync_plans",
-        "schedule": 30,
-        "args": tuple(),
-    },
     "paypal-sync-products": {
         "task": "payments.tasks.paypal.sync_products",
         "schedule": 60,

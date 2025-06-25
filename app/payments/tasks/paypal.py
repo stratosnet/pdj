@@ -97,97 +97,112 @@ def sync_products():
 
 
 @shared_task()
-def sync_plans():
-    plans = Plan.objects.select_related("client").filter(
-        client__is_enabled=True, is_default=False
-    )
-
-    for plan in plans:
-        client = plan.client
-        processors = Processor.objects.filter(
-            is_enabled=True, type=Processor.Type.PAYPAL
+def sync_plan(plan_id: str):
+    try:
+        plan = Plan.objects.select_related("client").get(
+            pk=plan_id,
+            client__is_enabled=True,
+            is_default=False,
+            is_recurring=True,
         )
-        for processor in processors:
-            if not plan.is_recurring:
-                plan.links.get_or_create(processor=processor)
-                logger.info("PayPal processor link added to plan: %s", plan.id)
-                continue
+    except Plan.DoesNotExist:
+        logger.warning(f"Plan '{plan_id}' not found")
+        return
 
-            paypal_client = PayPalClient(
-                processor.client_id, processor.secret, processor.is_sandbox
+    for pr in PlanProcessorLink.objects.select_related("processor").filter(
+        Q(processor__type=Processor.Type.PAYPAL, processor__is_enabled=True)
+        & Q(plan=plan)
+    ):
+        processor = pr.processor
+        paypal_client = PayPalClient(
+            processor.client_id, processor.secret, processor.is_sandbox
+        )
+
+        try:
+            paypal_plans = fetch_all_subscription_plans(
+                paypal_client, plan.client.product_id
             )
+        except RequestException as e:
+            logger.error("PayPal fetch plan list failed: %s", e.response.text)
+            continue
 
+        try:
+            pr = plan.links.get(
+                processor=processor,
+            )
+        except PlanProcessorLink.DoesNotExist:
+            pr = None
+
+        description = (
+            plan.description
+            if plan.description
+            else f"Description for the plan: {plan.name}"
+        )
+        if len(description) > 127:
+            description = description[:124] + "..."
+
+        interval_unit = plan.get_period_display().capitalize()
+        interval_count = plan.term
+        price = f"{plan.price:.2f}"
+        currency = settings.DEFAULT_CURRENCY
+
+        if pr.external_id is None:
             try:
-                paypal_plans = fetch_all_subscription_plans(
-                    paypal_client, client.product_id
+                resp = paypal_client.create_subscription_plan(
+                    plan.client.product_id,
+                    plan.name,
+                    description,
+                    interval_unit,
+                    interval_count,
+                    price,
+                    currency,
                 )
             except RequestException as e:
-                logger.error("PayPal fetch plan list failed: %s", e.response.text)
+                logger.error("PayPal create plan failed: %s", e.response.text)
                 continue
 
-            # NOTE: Check multiple references
+            logger.info("PayPal plan created: %s", resp["id"])
+
+            pr.external_id = resp["id"]
+            pr.synced_at = timezone.now()
+            pr.save(update_fields=["external_id", "synced_at"])
+        else:
             try:
-                pr = plan.links.get(
-                    processor=processor,
+                paypal_plan = paypal_plans[pr.external_id]
+            except KeyError:
+                logger.info(f"Plan '{pr.external_id}' not found on PayPal")
+                continue
+
+            if paypal_plan["status"] != "ACTIVE":
+                logger.info("PayPal plan not activate to update: %s", pr.external_id)
+                continue
+
+            # NOTE: Possible optimization of check diff between save states in order to avoid
+            # addition paypal api call, but not required right now
+            try:
+                paypal_client.update_subscription_plan(
+                    pr.external_id,
+                    plan.name,
+                    description,
                 )
-            except PlanProcessorLink.DoesNotExist:
-                pr = None
-
-            if pr is None and plan.is_enabled:
-                description = (
-                    plan.description
-                    if plan.description
-                    else f"Description for the plan: {plan.name}"
+            except RequestException as e:
+                if e.response.status_code != 422:
+                    raise e
+                logger.warning(
+                    f"PayPal failed to proceed update subscription plan, details: {e.response.text}"
                 )
-                if len(description) > 127:
-                    description = description[:124] + "..."
 
-                try:
-                    resp = paypal_client.create_subscription_plan(
-                        client.product_id,
-                        plan.name,
-                        description,
-                        plan.get_period_display().capitalize(),
-                        plan.term,
-                        f"{plan.price:.2f}",
-                        settings.DEFAULT_CURRENCY,
-                    )
-                except RequestException as e:
-                    logger.error("PayPal create plan failed: %s", e.response.text)
-                    continue
-
-                logger.info("PayPal plan created: %s", resp["id"])
-
-                plan.links.create(external_id=resp["id"], processor=processor)
-            elif pr is not None:
-                try:
-                    paypal_plan = paypal_plans[pr.external_id]
-                except KeyError:
-                    logger.info(f"Plan '{pr.external_id}' not found on PayPal")
-                    continue
-
-                if plan.is_enabled and paypal_plan["status"] != "ACTIVE":
-                    try:
-                        paypal_client.activate_subscription_plan(pr.external_id)
-                    except RequestException as e:
-                        logger.info(
-                            "PayPal plan activation failed: %s", e.response.text
-                        )
-                        continue
-
-                    logger.info("PayPal plan activated: %s", pr.external_id)
-                elif not plan.is_enabled and paypal_plan["status"] == "ACTIVE":
-                    try:
-                        paypal_client.deactivate_subscription_plan(pr.external_id)
-                    except RequestException as e:
-                        logger.info(
-                            "PayPal plan deactivation failed: %s", e.response.text
-                        )
-                        continue
-
-                    logger.info("PayPal plan deactivation: %s", pr.external_id)
-                else:
-                    logger.info(
-                        "PayPal plan '%s' does not require any update",
-                        pr.external_id,
-                    )
+            try:
+                paypal_client.update_pricing_plan(
+                    pr.external_id,
+                    price,
+                    currency,
+                )
+            except RequestException as e:
+                if e.response.status_code != 422:
+                    raise e
+                logger.warning(
+                    f"PayPal failed to proceed update pricing plan, details: {e.response.text}"
+                )
+            pr.synced_at = timezone.now()
+            pr.save(update_fields=["synced_at"])
