@@ -3,6 +3,7 @@ import random
 import string
 import binascii
 import base64
+import hashlib
 from typing import Any
 from urllib.parse import urljoin
 
@@ -84,3 +85,7 @@ def validate_schema_with_context(
         ]
         validation_error = api.validation_error_from_error_contexts(error_contexts)
         raise validation_error
+
+
+def hash_key(raw_key: str) -> str:
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()

@@ -11,6 +11,7 @@ from payments.models import (
     PlanProcessorLink,
     Processor,
     Subscription,
+    PaymentUrlCache,
 )
 from payments.serializers import ProcessorIDSerializer
 from core.utils import (
@@ -170,43 +171,45 @@ def me_subscribe(
 
     processor: Processor = pr.processor
 
+    if sub:
+        url = PaymentUrlCache.objects.get_subscription_cache_url(
+            subscription_id=sub.pk,
+            processor_id=processor.pk,
+        )
+        if url:
+            return {"url": url}
+
     custom_id = ProcessorIDSerializer.serialize_subscription()
 
-    def create_url():
-        if plan.is_recurring:
-            url = processor.create_subscription_url(
-                custom_id,
-                pr.external_id,
-                data.return_url,
-                (data.cancel_url if data.cancel_url else data.return_url),
-            )
-        else:
-            url = processor.create_checkout_url(
-                custom_id,
-                plan.price,
-                data.return_url,
-                (data.cancel_url if data.cancel_url else data.return_url),
-            )
-        return url
-
-    # cache_key = ProcessorIDSerializer.get_cache_key(
-    #     "subscribe", plan.id, processor.id, request.auth.id
-    # )
-    # url = ProcessorIDSerializer.get_or_create_url(cache_key, create_url)
-    url = create_url()
+    if plan.is_recurring:
+        url = processor.create_subscription_url(
+            custom_id,
+            pr.external_id,
+            data.return_url,
+            (data.cancel_url if data.cancel_url else data.return_url),
+        )
+    else:
+        url = processor.create_checkout_url(
+            custom_id,
+            plan.price,
+            data.return_url,
+            (data.cancel_url if data.cancel_url else data.return_url),
+        )
     if not url:
         return 400, {"message": "No payment link"}
 
     _, subscription_id = ProcessorIDSerializer.deserialize(custom_id)
     with transaction.atomic():
-        if sub and sub.is_null:
-            # Delete the old null subscription and create a new one with the correct id
-            sub.delete()
-        Subscription.objects.create(
+        sub = Subscription.objects.create(
             id=subscription_id,
             user=request.auth,
             plan=plan,
             active_processor=processor,
+        )
+        PaymentUrlCache.objects.create_subscription_cache(
+            subscription_id=sub.pk,
+            processor_id=processor.pk,
+            url=url,
         )
 
     return {"url": url}
@@ -326,6 +329,9 @@ def me_change_plan(
     ):
         return 400, {"message": "Switch could be only on a different plan"}
 
+    if next_plan.is_default:
+        return 400, {"message": "Default plan could not be used for switch"}
+
     processor: Processor = sub.active_processor
 
     # NOTE: If another provider will be added, we should add more logic here to create a correct switch
@@ -334,21 +340,28 @@ def me_change_plan(
     if not proc_ref or not proc_ref.external_id:
         return 400, {"message": "Payment method for new plan not found"}
 
-    def create_url():
-        return processor.create_change_plan_url(
-            sub.external_id,
-            proc_ref.external_id,
-            data.return_url,
-            (data.cancel_url if data.cancel_url else data.return_url),
-        )
+    url = PaymentUrlCache.objects.get_change_plan_cache_url(
+        subscription_id=sub.pk,
+        plan_id=next_plan.pk,
+        processor_id=processor.pk,
+    )
+    if url:
+        return {"url": url}
 
-    # cache_key = ProcessorIDSerializer.get_cache_key(
-    #     "changeplan", next_plan.id, processor.id, request.auth.id
-    # )
-
-    # url = ProcessorIDSerializer.get_or_create_url(cache_key, create_url)
-    url = create_url()
+    url = processor.create_change_plan_url(
+        sub.external_id,
+        proc_ref.external_id,
+        data.return_url,
+        (data.cancel_url if data.cancel_url else data.return_url),
+    )
     if not url:
         return 400, {"message": "Subscription could not be changed"}
+
+    PaymentUrlCache.objects.create_change_plan_cache(
+        subscription_id=sub.pk,
+        plan_id=next_plan.pk,
+        processor_id=processor.pk,
+        url=url,
+    )
 
     return 200, {"url": url}

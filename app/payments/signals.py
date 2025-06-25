@@ -14,6 +14,7 @@ from .models import (
     Processor,
     Subscription,
     Invoice,
+    PaymentUrlCache,
 )
 from .exceptions import (
     SubscriptionNotFound,
@@ -188,6 +189,10 @@ def on_subscription_activate(
         context = get_subscription_context(invoice)
         template = EmailTemplate.objects.get_by_type(EmailTemplate.PAYMENT_SUCCESS)
         template.send(sub.user, context)
+
+        PaymentUrlCache.objects.invalidate_subscription_cache(
+            subscription_id=sub.pk,
+        )
     elif sub.is_suspended:
         sub.unsuspend()
     else:
@@ -226,6 +231,11 @@ def on_subscription_update(
     if sub and new_plan and sub.plan.pk != new_plan.pk:
         sub.next_billing_plan = new_plan
         sub.save(update_fields=["next_billing_plan"])
+
+    PaymentUrlCache.objects.invalidate_change_plan_cache(
+        subscription_id=sub.pk,
+        plan_id=new_plan.pk,
+    )
 
 
 checkout_approved = Signal()

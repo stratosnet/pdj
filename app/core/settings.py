@@ -305,9 +305,14 @@ CELERY_TASK_ACKS_LATE = False
 CELERY_IGNORE_RESULT = True
 
 CELERY_BEAT_SCHEDULE = {
+    "purge-payment-url-cache": {
+        "task": "payments.tasks.purge.payment_url_cache",
+        "schedule": 60,  # every minute
+        "args": tuple(),
+    },
     "paypal-sync-products": {
         "task": "payments.tasks.paypal.sync_products",
-        "schedule": 60,
+        "schedule": 60,  # every minute
         "args": tuple(),
     },
 }

@@ -15,7 +15,12 @@ from django.core.exceptions import ValidationError
 from django.utils.safestring import mark_safe
 from django.utils.html import format_html
 
-from core.utils import mask_secret, generate_base_secret, build_full_path
+from core.utils import (
+    mask_secret,
+    generate_base_secret,
+    build_full_path,
+    hash_key,
+)
 
 from .clients.base import PaymentClient
 from .clients.paypal import PayPalClient
@@ -859,3 +864,171 @@ class Processor(models.Model):
         return {
             "type": self.get_type_display(),
         }
+
+
+class PaymentUrlCacheManager(models.Manager):
+
+    def get_cache_url(
+        self,
+        type: "PaymentUrlCache.Type",
+        raw_key: str,
+        *,
+        processor_id: str | None = None,
+    ):
+        c = self.filter(
+            type=type, key=hash_key(raw_key), processor_id=processor_id
+        ).first()
+        if c and not c.is_expired:
+            return c.url
+
+    def create_with_expiration(
+        self,
+        type: "PaymentUrlCache.Type",
+        raw_key: str,
+        url: str,
+        *,
+        processor_id: str | None = None,
+        expires_in: timedelta = timedelta(seconds=settings.CACHE_PROCESSOR_URL_TIMEOUT),
+    ):
+        return self.create(
+            type=type,
+            key=hash_key(raw_key),
+            processor_id=processor_id,
+            url=url,
+            expired_at=timezone.now() + expires_in,
+        )
+
+    def invalidate_cache(
+        self,
+        type: "PaymentUrlCache.Type",
+        raw_key: str,
+    ):
+        return self.filter(type=type, key=hash_key(raw_key)).delete()
+
+    def invalidate_subscription_cache(
+        self,
+        subscription_id: uuid.UUID,
+    ):
+        return self.invalidate_cache(
+            type=PaymentUrlCache.Type.SUBSCRIBE,
+            raw_key=f"{subscription_id}",
+        )
+
+    def invalidate_change_plan_cache(
+        self,
+        subscription_id: uuid.UUID,
+        plan_id: uuid.UUID,
+    ):
+        return self.invalidate_cache(
+            type=PaymentUrlCache.Type.CHANGE_PLAN,
+            raw_key=f"{subscription_id}_{plan_id}",
+        )
+
+    def get_subscription_cache_url(
+        self,
+        subscription_id: uuid.UUID,
+        *,
+        processor_id: uuid.UUID | None = None,
+    ):
+        return self.get_cache_url(
+            type=PaymentUrlCache.Type.SUBSCRIBE,
+            raw_key=f"{subscription_id}",
+            processor_id=processor_id,
+        )
+
+    def get_change_plan_cache_url(
+        self,
+        subscription_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        *,
+        processor_id: uuid.UUID | None = None,
+    ):
+        return self.get_cache_url(
+            type=PaymentUrlCache.Type.CHANGE_PLAN,
+            raw_key=f"{subscription_id}_{plan_id}",
+            processor_id=processor_id,
+        )
+
+    def create_subscription_cache(
+        self,
+        subscription_id: uuid.UUID,
+        url: str,
+        *,
+        processor_id: uuid.UUID | None = None,
+    ):
+        return self.create_with_expiration(
+            type=PaymentUrlCache.Type.SUBSCRIBE,
+            raw_key=f"{subscription_id}",
+            url=url,
+            processor_id=processor_id,
+        )
+
+    def create_change_plan_cache(
+        self,
+        subscription_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        url: str,
+        *,
+        processor_id: uuid.UUID | None = None,
+    ):
+        return self.create_with_expiration(
+            type=PaymentUrlCache.Type.CHANGE_PLAN,
+            raw_key=f"{subscription_id}_{plan_id}",
+            url=url,
+            processor_id=processor_id,
+        )
+
+
+class PaymentUrlCache(models.Model):
+
+    class Type(models.TextChoices):
+        SUBSCRIBE = "subscribe", _("Subscribe")
+        CHANGE_PLAN = "changeplan", _("Change Plan")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    type = models.CharField(
+        max_length=64,
+        choices=Type.choices,
+        verbose_name=_("type"),
+        help_text=_("Type of the cached URL"),
+    )
+    key = models.CharField(
+        max_length=255,
+        verbose_name=_("key"),
+        help_text=_("Unique key for the cached URL, used to identify the cache entry"),
+    )
+    processor = models.ForeignKey(
+        "Processor",
+        verbose_name=_("processor"),
+        related_name="payment_url_cache",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text=_("The payment processor for which the URL is cached"),
+    )
+    url = models.URLField(
+        verbose_name=_("URL"),
+        help_text=_("The cached URL for the payment processor"),
+    )
+    expired_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    objects = PaymentUrlCacheManager()
+
+    class Meta:
+        verbose_name = _("payment URL cache")
+        verbose_name_plural = _("payment URL caches")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["type", "key"],
+                name="unique_payment_url_cache",
+                violation_error_message=_("This URL cache already exists."),
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.type}:{self.key} (expires: {self.expired_at})"
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expired_at
