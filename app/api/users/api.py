@@ -3,6 +3,10 @@ import logging
 from django.http import HttpRequest
 from django.db import transaction
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
+
+import time
+import json
 
 from ninja import Router, Header
 
@@ -12,6 +16,10 @@ from payments.models import (
     Processor,
     Subscription,
     PaymentUrlCache,
+)
+
+from payments.signals import (
+    subscription_suspend,
 )
 from payments.serializers import ProcessorIDSerializer
 from core.utils import (
@@ -30,7 +38,7 @@ from .schemas import (
     CheckoutSchema,
     ErrorSchema,
     SubscribeSchema,
-    UpgradePlanSchema,
+    UpgradePlanSchema, SubSchema,
 )
 
 
@@ -288,6 +296,41 @@ def me_unsubscribe(
 
     return 204, None
 
+@router.post(
+    "/me/subscription",
+    summary="show detail subscription",
+    response={200: SubSchema, 400: ErrorSchema},
+)
+@authenticate_client(full=False)
+def me_show_subscription(
+    request: HttpRequest,
+    data: SubscribeSchema,
+    client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
+):
+    sub = Subscription.objects.select_related(
+        "plan", "active_processor"
+    ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
+    if not sub:
+        return 400, {"message": "Subscription not found"}
+    if not sub.external_id:
+        return 400, {
+            "message": "Subscription without payment could not be changed, cancled or re-subscribed"
+        }
+    processor: Processor = sub.active_processor
+    rsub = processor.get_subscription_details(sub.external_id)
+    status = rsub["status"]
+    if not sub.is_suspended and status == "SUSPENDED":
+        suspended_at = parse_datetime(
+            rsub["status_update_time"]
+        )
+        subscription_suspend.send(
+            sender=None,
+            subscription_id=sub.external_id,
+            suspended_at=suspended_at,
+        )
+        # print("return: ", status, suspended_at)
+
+    return 200, {"status": rsub["status"], "status_update_time": rsub["status_update_time"], "billing_info": rsub["billing_info"]}
 
 @router.post(
     "/me/changeplan",

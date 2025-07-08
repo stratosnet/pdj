@@ -850,6 +850,14 @@ class Processor(models.Model):
             reason,
             suspend=True,  # TODO: Add flag to processor model
         )
+    def get_subscription_details(
+            self,
+            id,
+    ):
+        provider = self.get_provider()
+        return provider.get_subscription_details(
+            id
+        )
 
     def approve_order(self, external_order_id: str):
         provider = self.get_provider()

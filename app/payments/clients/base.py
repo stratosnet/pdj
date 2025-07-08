@@ -48,3 +48,7 @@ class PaymentClient(ABC):
     @abstractmethod
     def refund_payment(self, id: str):
         pass
+
+    @abstractmethod
+    def get_subscription_details(self, id: str):
+        pass

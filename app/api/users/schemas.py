@@ -98,3 +98,8 @@ class LinkSchema(Schema):
 
 class ErrorSchema(Schema):
     message: str
+
+class SubSchema(Schema):
+    status: str
+    status_update_time: str
+    billing_info: str

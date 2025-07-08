@@ -110,10 +110,10 @@ class OriginalPayPalClient:
         url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/activate"
         self._make_request(url=url, method="POST", json=data, headers=self.headers)
 
-    def show_subscription_details(self, subscription_id: str) -> None:
+    def show_subscription_details(self, subscription_id: str):
         data = {}
-
         url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}"
+        # print(url)
         return self._make_request(
             url=url, method="GET", json=data, headers=self.headers
         ).json()
@@ -414,6 +414,19 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
                 )
                 return
             raise e
+
+    def get_subscription_details(self, id: str):
+        try:
+            rsp = self.show_subscription_details(id)
+            # print(rsp)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                logger.warning(
+                    f"Failed to proceed subscription cancel, details: {e.response.text}"
+                )
+                return
+            raise e
+        return rsp
 
     def generate_change_subscription_data(
         self,
