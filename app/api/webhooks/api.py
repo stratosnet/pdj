@@ -89,7 +89,7 @@ def process_paypal_webhook_event(
                 subscription_id=subscription_id,
             )
         # send as first event when subscription created and when unsuspended
-        case "BILLING.SUBSCRIPTION.ACTIVATED":
+        case "BILLING.SUBSCRIPTION.ACTIVATED" | "BILLING.SUBSCRIPTION.RE-ACTIVATED":
             external_invoice_id = webhook_event["resource"]["id"]
             _, subscription_id = ProcessorIDSerializer.deserialize(
                 webhook_event["resource"]["custom_id"]

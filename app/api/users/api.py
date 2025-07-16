@@ -3,6 +3,11 @@ import logging
 from django.http import HttpRequest
 from django.db import transaction
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
+from django.utils import timezone
+
+import time
+import json
 
 from ninja import Router, Header
 
@@ -12,6 +17,11 @@ from payments.models import (
     Processor,
     Subscription,
     PaymentUrlCache,
+)
+
+from payments.signals import (
+    subscription_suspend,
+    subscription_activate,
 )
 from payments.serializers import ProcessorIDSerializer
 from core.utils import (
@@ -30,7 +40,7 @@ from .schemas import (
     CheckoutSchema,
     ErrorSchema,
     SubscribeSchema,
-    UpgradePlanSchema,
+    UpgradePlanSchema, SubSchema,
 )
 
 
@@ -47,7 +57,7 @@ router = Router(auth=[OIDCBearer(), SessionAuth(csrf=False)], tags=["public"])
 def me(request: HttpRequest):
     subscriptions = Subscription.objects.select_related(
         "plan", "next_billing_plan"
-    ).get_user_subscriptions(request.auth.pk)
+    ).get_user_subscriptions_gt_next_billing_at(request.auth.pk)
 
     return {
         "email": request.auth.email,
@@ -147,7 +157,10 @@ def me_subscribe(
         client_id=request.client.pk,
         include_uninitialized=True,
     )
+    next_billing_at = None
     if sub:
+        if sub.next_billing_at:
+           next_billing_at = sub.next_billing_at
         match True:
             case sub.is_active:
                 return 400, {"message": "User has active subscription"}
@@ -181,12 +194,16 @@ def me_subscribe(
 
     custom_id = ProcessorIDSerializer.serialize_subscription()
 
+    start_time = None
     if plan.is_recurring:
+        if next_billing_at:
+            start_time = next_billing_at
         url = processor.create_subscription_url(
             custom_id,
             pr.external_id,
             data.return_url,
             (data.cancel_url if data.cancel_url else data.return_url),
+            start_time=start_time
         )
     else:
         url = processor.create_checkout_url(
@@ -284,10 +301,87 @@ def me_unsubscribe(
     processor.deactivate_subscription(
         sub.external_id,
         data.reason,
+        False if data.reason == "cancelsubscribe" else True
     )
 
     return 204, None
 
+@router.post(
+    "/me/subscription",
+    summary="show detail subscription",
+    response={200: SubSchema, 400: ErrorSchema},
+)
+@authenticate_client(full=False)
+def me_show_subscription(
+    request: HttpRequest,
+    data: SubscribeSchema,
+    client_id: str = Header(..., alias=CLIENT_ID_PARAM_NAME),
+):
+    sub = Subscription.objects.select_related(
+        "plan", "active_processor"
+    ).latest_for_user_and_client(user_id=request.auth.pk, client_id=request.client.pk)
+    if not sub:
+        return 400, {"message": "Subscription not found"}
+    if not sub.external_id:
+        return 400, {
+            "message": "Subscription without payment could not be changed, cancled or re-subscribed"
+        }
+    processor: Processor = sub.active_processor
+    rsub = processor.get_subscription_details(sub.external_id)
+    # rsub_transactions = processor.list_transactions_for_subscription(sub.external_id)
+    status = rsub["status"]
+    if not sub.is_suspended and status == "SUSPENDED":
+        suspended_at = parse_datetime(
+            rsub["status_update_time"]
+        )
+        subscription_suspend.send(
+            sender=None,
+            subscription_id=sub.id,
+            suspended_at=suspended_at,
+        )
+    if  sub.is_suspended and status == "ACTIVE":
+
+        #  external_invoice_id = webhook_event["resource"]["id"]
+        # _, subscription_id = ProcessorIDSerializer.deserialize(
+        #         webhook_event["resource"]["custom_id"]
+        #     )
+        # external_plan_id = webhook_event["resource"]["plan_id"]
+        # last_payment = webhook_event["resource"]["billing_info"]["last_payment"]
+        # amount = Decimal(last_payment["amount"]["value"])
+        # currency = last_payment["amount"]["currency_code"]
+        # start_at = parse_datetime(webhook_event["resource"]["start_time"])
+        # end_at = parse_datetime(
+        #         webhook_event["resource"]["billing_info"]["next_billing_time"]
+        #     )
+        amount = rsub["billing_info"]["last_payment"]["amount"]["value"]
+        currency = rsub["billing_info"]["last_payment"]["amount"]["currency_code"]
+
+        start_at = rsub["start_time"]
+        # end_at=>next_billing_date
+        end_at = rsub["billing_info"]["next_billing_time"]
+
+        external_invoice_id = rsub["id"]
+        external_plan_id = rsub["plan_id"]
+        subscription_id = sub.id
+
+        subscription_activate.send(
+            sender=None,
+            external_invoice_id=external_invoice_id,
+            external_plan_id=external_plan_id,
+            subscription_id=subscription_id,
+            amount=amount,
+            currency=currency,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        # print("return: ", status, suspended_at)
+    billing_info= {
+        "sub.status": status,
+        "sub.external_id": sub.external_id,
+        "sub.id": str(sub.id),
+        "rsub": rsub["billing_info"]
+    }
+    return 200, {"status": rsub["status"], "status_update_time": rsub["status_update_time"], "billing_info": json.dumps(billing_info)}
 
 @router.post(
     "/me/changeplan",

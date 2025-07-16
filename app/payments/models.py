@@ -354,6 +354,16 @@ class SubscriptionQuerySet(models.QuerySet):
             q &= Q(user_id=user_id)
         return self.filter(q)
 
+    # // filter next billing plan > now
+    def get_user_subscriptions_gt_next_billing_at(self, user_id: int | None = None):
+        latest_sub = Subscription.objects.filter(user_id=OuterRef("user_id")).values(
+            "id"
+        ).filter(next_billing_at__gt=timezone.now())
+        q = Q(id__in=Subquery(latest_sub))
+        if user_id is not None:
+            q &= Q(user_id=user_id)
+        return self.filter(q)
+
     def latest_for_user_and_client(
         self,
         user_id: int,
@@ -736,7 +746,7 @@ class Processor(models.Model):
         return self.get_type_display()
 
     def clean(self):
-        if self.type == self.PAYPAL and not self.client_id:
+        if self.type == self.Type.PAYPAL and not self.client_id:
             raise ValidationError(_("PayPal requires a client ID"))
 
     @property
@@ -802,6 +812,7 @@ class Processor(models.Model):
         external_plan_id: str,
         return_url: str | None,
         cancel_url: str | None,
+        start_time: str | None = None,
     ):
         provider = self.get_provider()
         payload = provider.generate_subscription_data(
@@ -809,6 +820,7 @@ class Processor(models.Model):
             external_plan_id,
             return_url,
             cancel_url,
+            start_time,
         )
         return payload.get("url") if payload else None
 
@@ -843,14 +855,35 @@ class Processor(models.Model):
         self,
         external_invoice_id: str,
         reason: str,
+        suspend: bool = True,
     ):
         provider = self.get_provider()
         provider.deactivate_subscription(
             external_invoice_id,
             reason,
-            suspend=True,  # TODO: Add flag to processor model
+            suspend=suspend,  # TODO: Add flag to processor model
         )
 
+    def get_subscription_details(
+            self,
+            id,
+    ):
+        provider = self.get_provider()
+        return provider.get_subscription_details(
+            id
+        )
+
+    def list_transactions_for_subscription(
+            self,
+            id,
+    ):
+        provider = self.get_provider()
+        return provider.list_transactions_for_subscription(id)
+
+    def list_webhooks(self):
+        provider = self.get_provider()
+        return provider.list_webhooks()     
+        
     def approve_order(self, external_order_id: str):
         provider = self.get_provider()
         provider.approve_order(external_order_id)
