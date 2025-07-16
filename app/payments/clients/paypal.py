@@ -1,7 +1,7 @@
 from typing import Any, TypedDict
 import logging
 from decimal import Decimal
-
+from django.utils import timezone
 import requests
 from requests.auth import HTTPBasicAuth
 from requests import Response
@@ -74,11 +74,14 @@ class OriginalPayPalClient:
         *,
         return_url: str | None = None,
         cancel_url: str | None = None,
+        start_time: str | None = None,
     ) -> dict[str, Any]:
+
         data = {
             "plan_id": plan_id,
             "custom_id": custom_id,
             "application_context": {"return_url": return_url, "cancel_url": cancel_url},
+            "start_time":  None if start_time is None else start_time,
         }
 
         url = f"{self.base_url}/v1/billing/subscriptions"
@@ -114,6 +117,19 @@ class OriginalPayPalClient:
         data = {}
         url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}"
         # print(url)
+        return self._make_request(
+            url=url, method="GET", json=data, headers=self.headers
+        ).json()
+    def list_transactions_for_subscription_orig(self, subscription_id: str):
+        data = {}
+        url = f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/transactions?start_time=2020-01-21T07:50:20.940Z&end_time=2050-08-21T07:50:20.940Z"
+        return self._make_request(
+            url=url, method="GET", json=data, headers=self.headers
+        ).json()
+
+    def list_webhooks_orig(self):
+        data = {}
+        url = f"{self.base_url}/v1/notifications/webhooks"
         return self._make_request(
             url=url, method="GET", json=data, headers=self.headers
         ).json()
@@ -375,10 +391,11 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
         plan_id: str,
         return_url: str | None = None,
         cancel_url: str | None = None,
+        start_time: str | None = None,
     ) -> dict[str, str] | None:
         try:
             resp = self.create_billing_subscription(
-                plan_id, custom_id, return_url=return_url, cancel_url=cancel_url
+                plan_id, custom_id, return_url=return_url, cancel_url=cancel_url, start_time=start_time
             )
         except requests.exceptions.HTTPError as e:
             logger.error(e.response.text)
@@ -418,6 +435,32 @@ class PayPalClient(PaymentClient, OriginalPayPalClient):
     def get_subscription_details(self, id: str):
         try:
             rsp = self.show_subscription_details(id)
+            # print(rsp)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                logger.warning(
+                    f"Failed to proceed subscription cancel, details: {e.response.text}"
+                )
+                return
+            raise e
+        return rsp
+
+    def list_transactions_for_subscription(self, id: str):
+        try:
+            rsp = self.list_transactions_for_subscription_orig(id)
+            # print(rsp)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                logger.warning(
+                    f"Failed to proceed subscription cancel, details: {e.response.text}"
+                )
+                return
+            raise e
+        return rsp
+        
+    def list_webhooks(self):
+        try:
+            rsp = self.list_webhooks_orig()
             # print(rsp)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 422:

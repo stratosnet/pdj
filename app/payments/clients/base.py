@@ -20,6 +20,7 @@ class PaymentClient(ABC):
         plan_id: str,
         return_url: str | None = None,
         cancel_url: str | None = None,
+        start_time: str | None = None,
     ) -> dict[str, str] | None:
         pass
 
@@ -51,4 +52,12 @@ class PaymentClient(ABC):
 
     @abstractmethod
     def get_subscription_details(self, id: str):
+        pass
+
+    @abstractmethod
+    def list_transactions_for_subscription(self, id: str):
+        pass
+    
+    @abstractmethod
+    def list_webhooks(self):
         pass
