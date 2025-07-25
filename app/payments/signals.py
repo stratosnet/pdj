@@ -102,9 +102,12 @@ def on_payment_completed(
     invoice.save()
 
     # NOTE: Find a way to change next_billing_at time
+    get_subscription_details = sub.active_processor.get_subscription_details(sub.external_id)
+    next_billing_at = parse_datetime(get_subscription_details["billing_info"]["next_billing_time"])
+    
     if sub.next_billing_plan:
         sub.plan = sub.next_billing_plan
-        sub.next_billing_plan = None
+        sub.next_billing_plan = next_billing_at if next_billing_at else None
         sub.save()
 
 
