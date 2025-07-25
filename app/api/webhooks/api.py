@@ -130,7 +130,7 @@ def process_paypal_webhook_event(
                 end_at=end_at,
             )
         # when suspended
-        case "BILLING.SUBSCRIPTION.SUSPENDED":
+        case "BILLING.SUBSCRIPTION.SUSPENDED" | "BILLING.SUBSCRIPTION.CANCELLED":
             _, subscription_id = ProcessorIDSerializer.deserialize(
                 webhook_event["resource"]["custom_id"]
             )
