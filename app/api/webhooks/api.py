@@ -227,6 +227,8 @@ def webhook_paypal(
     )
 
     status = resp.get("verification_status")
+    logger.info(f"PayPal webhook status verification: {status}")
+    logger.info("resp: %s", resp)
     if status != "SUCCESS":
         logger.warning(
             f"PayPal webhook status verification failed for '{webhook_secret}'"
