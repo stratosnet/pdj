@@ -5,6 +5,7 @@ from datetime import datetime
 from django.db import transaction
 from django.utils import timezone
 from django.dispatch import Signal, receiver
+from django.utils.dateparse import parse_datetime
 
 from customizations.models import EmailTemplate
 from customizations.tasks import notify_admins
@@ -91,20 +92,31 @@ def on_payment_completed(
 
     invoice = Invoice.objects.filter(external_id=external_sale_id).first()
     if not invoice:
-        logger.warning(f"Invoice '{external_sale_id}' not found to proceed")
-        return
+        logger.warning(f"Invoice '{external_sale_id}' not found to proceed, creating new one")
+        Invoice.objects.create(
+            subscription=sub,
+            processor=sub.active_processor,
+            external_id=external_sale_id,
+            amount=amount,
+            currency=currency,
+            status=Invoice.Status.SUCCESS,
+            created_at=created_at,
+        )
+    else:
 
-    if invoice.status == Invoice.Status.SUCCESS:
-        logger.warning(f"Invoice '{external_sale_id}' has been proceed")
-        return
-
-    invoice.status = Invoice.Status.SUCCESS
-    invoice.save()
+        if invoice.status == Invoice.Status.SUCCESS:
+            logger.warning(f"Invoice '{external_sale_id}' has been proceed")
+            return
+        invoice.status = Invoice.Status.SUCCESS
+        invoice.save()
 
     # NOTE: Find a way to change next_billing_at time
+    get_subscription_details = sub.active_processor.get_subscription_details(sub.external_id)
+    next_billing_at = parse_datetime(get_subscription_details["billing_info"]["next_billing_time"])
+    
     if sub.next_billing_plan:
         sub.plan = sub.next_billing_plan
-        sub.next_billing_plan = None
+        sub.next_billing_plan = next_billing_at if next_billing_at else None
         sub.save()
 
 
