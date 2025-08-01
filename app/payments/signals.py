@@ -112,12 +112,18 @@ def on_payment_completed(
 
     # NOTE: Find a way to change next_billing_at time
     get_subscription_details = sub.active_processor.get_subscription_details(sub.external_id)
-    next_billing_at = parse_datetime(get_subscription_details["billing_info"]["next_billing_time"])
-    
-    if sub.next_billing_plan:
-        sub.plan = sub.next_billing_plan
-        sub.next_billing_plan = next_billing_at if next_billing_at else None
+    logger.info(f"Get subscription details: {get_subscription_details}")
+    billing_info_str = get_subscription_details["billing_info"]
+    logger.info(f"Billing info: {billing_info_str}")
+
+    next_billing_at_str = billing_info_str.get("next_billing_time")
+
+    if next_billing_at_str:
+        next_billing_at = parse_datetime(next_billing_at_str)
+        sub.next_billing_at = next_billing_at if next_billing_at else None
         sub.save()
+    else:
+        logger.warning(f"Invoice '{external_sale_id}' has no next billing time")
 
 
 subscription_suspend = Signal()
