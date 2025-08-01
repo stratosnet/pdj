@@ -80,7 +80,7 @@ def process_paypal_webhook_event(
                 created_at=created_at,
             )
         # sent on refund payment
-        case "PAYMENT.SALE.REFUNDED":
+        case "PAYMENT.SALE.REFUNDED"|"PAYMENT.SALE.DENIED"|"PAYMENT.SALE.REVERSED":
             _, subscription_id = ProcessorIDSerializer.deserialize(
                 webhook_event["resource"].get("custom", "")
             )
